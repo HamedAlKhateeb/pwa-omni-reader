@@ -9,6 +9,7 @@ import ArticleDialog from "@/components/ArticleDialog";
 import Reader from "@/components/Reader";
 import { createArticle, makeId } from "@/lib/article";
 import { localStore } from "@/lib/storage";
+import { readSharedLink } from "@/lib/shareTarget";
 import type { Article, ExportBundle, Folder as FolderItem, Highlight, Note, ReaderSettings } from "@/lib/types";
 
 type View = "library" | "favorites" | "archive" | "notes" | "folders" | "settings";
@@ -22,12 +23,9 @@ export default function Home() {
   const reload = async () => { const [a, f, n, h, s] = await Promise.all([localStore.getArticles(), localStore.getFolders(), localStore.getNotes(), localStore.getHighlights(), localStore.getSettings()]); setArticles(a); setFolders(f); setNotes(n); setHighlights(h); setSettings(s); setLoading(false); };
   useEffect(() => { reload().catch(() => { setLoading(false); toast.error("تعذّر فتح التخزين المحلي في هذا المتصفح."); }); const updateNetwork = () => setOnline(navigator.onLine); addEventListener("online", updateNetwork); addEventListener("offline", updateNetwork); return () => { removeEventListener("online", updateNetwork); removeEventListener("offline", updateNetwork); }; }, []);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has("share")) return;
-    const text = params.get("share_text") || "";
-    const sharedUrl = params.get("share_url") || text.match(/https?:\/\/[^\s<>"']+/i)?.[0] || "";
-    const sharedTitle = params.get("share_title") || "";
-    try { const parsed = new URL(sharedUrl); if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error(); setCaptureSeed({ url: parsed.href, title: sharedTitle }); setCaptureOpen(true); } catch { toast.error("لم يصل رابط صالح من قائمة المشاركة."); }
+    const sharedLink = readSharedLink(window.location.search);
+    if (!new URLSearchParams(window.location.search).has("share")) return;
+    if (sharedLink) { setCaptureSeed(sharedLink); setCaptureOpen(true); } else { toast.error("لم يصل رابط صالح من قائمة المشاركة."); }
     window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
   }, []);
 
