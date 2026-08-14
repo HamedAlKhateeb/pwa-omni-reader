@@ -1,26 +1,17 @@
+<!-- Design reminder — «مرسم التصفّح»: warm editorial typography supports an offline-first reading tool. -->
 <!doctype html>
-<html lang="en">
-
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Chrome Web App</title>    
-    <!-- THIS IS THE START OF A COMMENT BLOCK, BLOCK TO BE DELETED: Google Fonts here, example:
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="theme-color" content="#176b5b" />
+    <meta name="description" content="Omni Reader — مكتبة قراءة محلية تعمل دون اتصال." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/manus-storage/masar-symbol_d83e725f.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
+    <link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa+Ink:wght@400;700&family=Noto+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <title>Omni Reader — مكتبتك المحلية</title>
   </head>
-
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
-  </body>
-
+  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

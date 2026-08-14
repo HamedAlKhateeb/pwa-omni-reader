@@ -1,0 +1,10 @@
+{
+  "name": "Omni Reader — Offline Library",
+  "short_name": "Omni Reader",
+  "description": "مكتبة قراءة محلية تعمل دون اتصال بعد الزيارة الأولى.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f0e8",
+  "theme_color": "#176b5b",
+  "icons": [{ "src": "/manus-storage/masar-symbol_d83e725f.png", "sizes": "512x512", "type": "image/png" }]
+}

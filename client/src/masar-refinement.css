@@ -1,0 +1,24 @@
+/** Style refinement — «مسار»: charcoal editorial hierarchy; emerald action; amber attention only. */
+.workspace-heading h1 {
+  color: #1f2926 !important;
+  -webkit-text-fill-color: #1f2926 !important;
+  background: none !important;
+  background-image: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  text-shadow: none !important;
+  filter: grayscale(1) brightness(.43) !important;
+}
+
+.workspace-heading .eyebrow,
+.empty-library .eyebrow {
+  color: #176b5b !important;
+  -webkit-text-fill-color: #176b5b !important;
+}
+
+.empty-library h2,
+.brand strong::after {
+  color: #1f2926 !important;
+  -webkit-text-fill-color: #1f2926 !important;
+  filter: grayscale(1) brightness(.43) !important;
+}
