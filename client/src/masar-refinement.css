@@ -22,3 +22,22 @@
   -webkit-text-fill-color: #1f2926 !important;
   filter: grayscale(1) brightness(.43) !important;
 }
+
+.search-box:has(input[placeholder="ابحثي في العنوان والرابط والوسوم…"]) {
+  position: relative;
+}
+
+.search-box:has(input[placeholder="ابحثي في العنوان والرابط والوسوم…"]) input::placeholder {
+  color: transparent;
+}
+
+.search-box:has(input[placeholder="ابحثي في العنوان والرابط والوسوم…"])::after {
+  content: "ابحث في العنوان والرابط والوسوم…";
+  position: absolute;
+  pointer-events: none;
+  right: 43px;
+  left: 56px;
+  color: #8d8a82;
+  font-size: 13px;
+  text-align: right;
+}
