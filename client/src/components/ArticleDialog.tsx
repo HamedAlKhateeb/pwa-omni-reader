@@ -1,16 +1,17 @@
 /** The mobile and desktop web app both use the server extractor; no extension is required. */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, Link2, Loader2, X } from "lucide-react";
 import type { Article } from "@/lib/types";
 import { createArticle, extractArticleFromHtml } from "@/lib/article";
 import { trpc } from "@/lib/trpc";
-import { extractWithSupabase, isGitHubPagesBuild } from "@/lib/supabaseExtractor";
+import { extractWithRemoteServer, isGitHubPagesBuild } from "@/lib/remoteExtractor";
 
-type Props = { open: boolean; onClose: () => void; onSave: (article: Article, notice?: string) => Promise<void> };
+type Props = { open: boolean; initialUrl?: string; initialTitle?: string; onClose: () => void; onSave: (article: Article, notice?: string) => Promise<void> };
 
-export default function ArticleDialog({ open, onClose, onSave }: Props) {
+export default function ArticleDialog({ open, initialUrl = "", initialTitle = "", onClose, onSave }: Props) {
   const [url, setUrl] = useState(""); const [title, setTitle] = useState(""); const [content, setContent] = useState(""); const [error, setError] = useState("");
   const extraction = trpc.article.extract.useMutation();
+  useEffect(() => { if (open) { setUrl(initialUrl); setTitle(initialTitle); setContent(""); setError(""); } }, [open, initialUrl, initialTitle]);
   if (!open) return null;
   const submit = async () => {
     setError(""); let normalized: URL;
@@ -20,7 +21,7 @@ export default function ArticleDialog({ open, onClose, onSave }: Props) {
         const article = content.includes("<") ? extractArticleFromHtml(content, normalized.href) : createArticle(normalized.href, title, `<p>${content.replace(/</g, "&lt;")}</p>`);
         if (title.trim()) article.title = title.trim(); await onSave(article);
       } else {
-        const extracted = isGitHubPagesBuild ? await extractWithSupabase(normalized.href) : await extraction.mutateAsync({ url: normalized.href });
+        const extracted = isGitHubPagesBuild ? await extractWithRemoteServer(normalized.href) : await extraction.mutateAsync({ url: normalized.href });
         const article = createArticle(extracted.url, title.trim() || extracted.title, extracted.content);
         article.excerpt = extracted.excerpt; article.image = extracted.image; article.readingTimeMinutes = extracted.readingTimeMinutes;
         await onSave(article, "استُخرج المقال وحُفظ على جهازك.");

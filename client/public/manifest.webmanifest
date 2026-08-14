@@ -6,5 +6,14 @@
   "display": "standalone",
   "background_color": "#f5f0e8",
   "theme_color": "#176b5b",
+  "share_target": {
+    "action": "./?share=1",
+    "method": "GET",
+    "params": {
+      "title": "share_title",
+      "text": "share_text",
+      "url": "share_url"
+    }
+  },
   "icons": [{ "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663217306960/clxovCGqBJrQKLsW.png", "sizes": "512x512", "type": "image/png" }]
 }

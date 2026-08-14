@@ -31,8 +31,9 @@ jobs:
       - run: pnpm exec vite build
         env:
           VITE_GITHUB_PAGES: "true"
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_EXTRACTOR_URL: "https://chromeapp-vfkdzams.manus.space/api/extract"
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/public
