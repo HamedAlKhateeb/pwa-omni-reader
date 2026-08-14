@@ -31,7 +31,7 @@ jobs:
       - run: pnpm exec vite build
         env:
           VITE_GITHUB_PAGES: "true"
-          VITE_EXTRACTOR_URL: "https://chromeapp-vfkdzams.manus.space/api/extract"
+          VITE_EXTRACTOR_URL: "https://chromeapp-vfkdzams.manus.space/api/trpc/article.extract?batch=1"
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

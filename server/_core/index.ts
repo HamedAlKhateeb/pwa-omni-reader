@@ -64,6 +64,17 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.use("/api/trpc", (req, res, next) => {
+    const origin = req.header("origin");
+    if (origin && PUBLIC_WEB_ORIGINS.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-TRPC-Source");
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") return res.status(origin && PUBLIC_WEB_ORIGINS.has(origin) ? 204 : 403).end();
+    return next();
+  });
   app.options("/api/extract", (req, res) => {
     if (!extractionCors(req, res)) return res.status(403).end();
     return res.status(204).end();
