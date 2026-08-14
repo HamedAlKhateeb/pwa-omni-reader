@@ -12,8 +12,8 @@ import { localStore } from "@/lib/storage";
 import type { Article, ExportBundle, Folder as FolderItem, Highlight, Note, ReaderSettings } from "@/lib/types";
 
 type View = "library" | "favorites" | "archive" | "notes" | "folders" | "settings";
-const logoUrl = "/manus-storage/masar-symbol_d83e725f.png";
-const progressImage = "/manus-storage/masar-progress_ecb72877.jpg";
+const logoUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663217306960/clxovCGqBJrQKLsW.png";
+const progressImage = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663217306960/JXtIdhPscLLVagHz.jpg";
 
 export default function Home() {
   const [articles, setArticles] = useState<Article[]>([]); const [folders, setFolders] = useState<FolderItem[]>([]); const [notes, setNotes] = useState<Note[]>([]); const [highlights, setHighlights] = useState<Highlight[]>([]); const [settings, setSettings] = useState<ReaderSettings | null>(null);

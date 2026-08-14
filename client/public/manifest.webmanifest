@@ -1,10 +1,10 @@
 {
-  "name": "Omni Reader — Offline Library",
-  "short_name": "Omni Reader",
+  "name": "مسار — مكتبة قراءة بلا اتصال",
+  "short_name": "مسار",
   "description": "مكتبة قراءة محلية تعمل دون اتصال بعد الزيارة الأولى.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#f5f0e8",
   "theme_color": "#176b5b",
-  "icons": [{ "src": "/manus-storage/masar-symbol_d83e725f.png", "sizes": "512x512", "type": "image/png" }]
+  "icons": [{ "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663217306960/clxovCGqBJrQKLsW.png", "sizes": "512x512", "type": "image/png" }]
 }

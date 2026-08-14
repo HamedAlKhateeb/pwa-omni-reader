@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@mozilla/readability": "npm:@mozilla/readability@0.6.0",
+    "linkedom": "npm:linkedom@0.18.12"
+  }
+}
