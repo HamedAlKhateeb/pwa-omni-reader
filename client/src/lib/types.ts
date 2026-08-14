@@ -47,21 +47,33 @@ export type Highlight = {
 export type ReaderSettings = {
   fontSize: number;
   lineHeight: number;
+  wordSpacing: number;
   width: number;
   fontFamily: "serif" | "sans" | "mono";
+  textAlign: "right" | "left" | "justify";
   theme: "light" | "cream" | "sepia" | "dark";
   isRtl: boolean;
   showImages: boolean;
+  libraryBackground: "paper" | "sand" | "mist";
+  autoOpenEnabled: boolean;
+  autoOpenSites: string[];
+  importantSites: Array<{ domain: string; checked: boolean }>;
 };
 
 export const defaultReaderSettings: ReaderSettings = {
   fontSize: 19,
   lineHeight: 1.9,
+  wordSpacing: 0,
   width: 760,
   fontFamily: "serif",
+  textAlign: "right",
   theme: "cream",
   isRtl: true,
   showImages: true,
+  libraryBackground: "paper",
+  autoOpenEnabled: false,
+  autoOpenSites: [],
+  importantSites: [],
 };
 
 export type ExportBundle = {
