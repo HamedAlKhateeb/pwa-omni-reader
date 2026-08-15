@@ -1,5 +1,5 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
-import { localStore } from "./storage";
+import { localStore, type ArticleDeletionLog } from "./storage";
 import type { ExportBundle, ReaderSettings } from "./types";
 
 export const SYNC_KEYS = [
@@ -8,6 +8,7 @@ export const SYNC_KEYS = [
   "reader_auto_open_enabled", "reader_positions", "reader_theme", "reader_font_size",
   "reader_font", "reader_align", "reader_width", "reader_line_height",
   "reader_word_spacing", "reader_rtl", "reader_show_photos", "library_bg_color",
+  "reader_deleted",
 ] as const;
 
 export type SyncKey = (typeof SYNC_KEYS)[number];
@@ -224,13 +225,14 @@ async function authorizedRequest(path: string, init: RequestInit = {}) {
   return { ...result, session };
 }
 
-function syncValuesFromBundle(bundle: ExportBundle, passthrough: SyncMeta["passthrough"]): SyncValues {
+function syncValuesFromBundle(bundle: ExportBundle, passthrough: SyncMeta["passthrough"], deletionLog: ArticleDeletionLog): SyncValues {
   const snapshot = bundleToExtensionSnapshot(bundle) as SyncValues;
   return {
     ...passthrough,
     ...snapshot,
     reader_custom_rules: passthrough.reader_custom_rules || [],
     reader_positions: passthrough.reader_positions || {},
+    reader_deleted: deletionLog,
   };
 }
 
@@ -252,7 +254,24 @@ function newerValue(item: Record<string, unknown>) {
   return Number(item.lastModified || item.updatedAt || item.ts || item.lastOpenedAt || item.created || item.createdAt) || 0;
 }
 
-export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unknown) {
+export function normalizeArticleDeletionLog(value: unknown): ArticleDeletionLog {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .map(([url, timestamp]) => [url, Number(timestamp) || 0] as const)
+    .filter(([url, timestamp]) => Boolean(url) && timestamp > 0));
+}
+
+export function mergeArticleDeletionLogs(...logs: unknown[]): ArticleDeletionLog {
+  return logs.reduce<ArticleDeletionLog>((merged, candidate) => {
+    Object.entries(normalizeArticleDeletionLog(candidate)).forEach(([url, timestamp]) => {
+      merged[url] = Math.max(merged[url] || 0, timestamp);
+    });
+    return merged;
+  }, {});
+}
+
+export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unknown, deletionLog: ArticleDeletionLog = {}) {
+  if (key === "reader_deleted") return mergeArticleDeletionLogs(localValue, serverValue);
   if (localValue === undefined || localValue === null) return serverValue;
   if (serverValue === undefined || serverValue === null) return localValue;
   if (key === "reader_bookmarks") {
@@ -262,6 +281,9 @@ export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unkno
     Object.entries(server).forEach(([url, remote]) => {
       const current = merged[url];
       if (!current || newerValue(remote) > newerValue(current)) merged[url] = { ...current, ...remote, text: remote.text || current?.text, image: remote.image || current?.image };
+    });
+    Object.entries(merged).forEach(([url, article]) => {
+      if ((deletionLog[url] || 0) >= newerValue(article)) delete merged[url];
     });
     return merged;
   }
@@ -342,9 +364,14 @@ export async function fullSync(): Promise<SyncResult> {
   try {
     const session = getSession();
     if (!session) return { ok: false, error: "سجّل الدخول أولًا للمزامنة.", conflicts: [] };
-    const [bundle, remote] = await Promise.all([localStore.exportAll(), pullAll()]);
+    const [initialBundle, remote, localDeletionLog] = await Promise.all([localStore.exportAll(), pullAll(), localStore.getArticleDeletionLog()]);
     const meta = getMeta();
-    const localValues = syncValuesFromBundle(bundle, meta.passthrough);
+    const deletionLog = mergeArticleDeletionLogs(localDeletionLog, remote.reader_deleted?.value);
+    const deletionLogChanged = stable(deletionLog) !== stable(localDeletionLog);
+    if (deletionLogChanged) await localStore.setArticleDeletionLog(deletionLog);
+    const deletedLocally = await localStore.applyArticleDeletions(deletionLog);
+    const bundle = deletedLocally ? await localStore.exportAll() : initialBundle;
+    const localValues = syncValuesFromBundle(bundle, meta.passthrough, deletionLog);
     const applyFromServer: SyncValues = {};
     const nextPassthrough = { ...meta.passthrough };
     const conflicts: SyncConflict[] = [];
@@ -354,6 +381,10 @@ export async function fullSync(): Promise<SyncResult> {
       const localValue = localValues[key];
       const remoteEntry = remote[key];
       const localChanged = stable(localValue) !== meta.lastValues[key];
+      if (key === "reader_deleted") {
+        if (!remoteEntry || stable(localValue) !== stable(remoteEntry.value)) pushQueue.push({ key, value: localValue });
+        continue;
+      }
       if (!remoteEntry) {
         if (localValue !== undefined) pushQueue.push({ key, value: localValue });
         continue;
@@ -361,7 +392,7 @@ export async function fullSync(): Promise<SyncResult> {
       const serverChanged = new Date(remoteEntry.updatedAt).getTime() > meta.lastSyncAt;
       const collection = ["reader_bookmarks", "reader_folders", "reader_notes", "reader_highlights", "reader_custom_rules", "reader_important_sites", "reader_auto_open_sites"].includes(key);
       if (collection) {
-        const merged = smartMerge(key, localValue, remoteEntry.value);
+        const merged = smartMerge(key, localValue, remoteEntry.value, deletionLog);
         applyFromServer[key] = merged;
         if (stable(merged) !== stable(remoteEntry.value)) pushQueue.push({ key, value: merged });
         continue;
@@ -374,7 +405,9 @@ export async function fullSync(): Promise<SyncResult> {
       else if (localChanged) pushQueue.push({ key, value: localValue });
     }
 
-    for (const item of pushQueue) await pushKey(item.key, item.value);
+    // Tombstones must arrive before bookmark updates. Otherwise a second device
+    // can re-upload an old bookmark in the brief gap after the library changes.
+    for (const item of [...pushQueue.filter((entry) => entry.key === "reader_deleted"), ...pushQueue.filter((entry) => entry.key !== "reader_deleted")]) await pushKey(item.key, item.value);
     if (Object.keys(applyFromServer).length) await applyServerValues(applyFromServer, bundle.settings);
     ["reader_custom_rules", "reader_positions"].forEach((key) => {
       const typedKey = key as SyncKey;
@@ -382,7 +415,8 @@ export async function fullSync(): Promise<SyncResult> {
     });
 
     const finalBundle = await localStore.exportAll();
-    const finalValues = syncValuesFromBundle(finalBundle, nextPassthrough);
+    const finalDeletionLog = await localStore.getArticleDeletionLog();
+    const finalValues = syncValuesFromBundle(finalBundle, nextPassthrough, finalDeletionLog);
     const now = Date.now();
     setMeta({ lastSyncAt: now, lastValues: Object.fromEntries(SYNC_KEYS.map((key) => [key, stable(finalValues[key])])), passthrough: nextPassthrough });
     return { ok: true, conflicts, syncedAt: now };
@@ -399,7 +433,7 @@ export async function resolveConflict(conflict: SyncConflict, side: "local" | "s
   else await pushKey(conflict.key, selected);
   if (["reader_custom_rules", "reader_positions"].includes(conflict.key)) meta.passthrough[conflict.key] = selected;
   const finalBundle = await localStore.exportAll();
-  const finalValues = syncValuesFromBundle(finalBundle, meta.passthrough);
+  const finalValues = syncValuesFromBundle(finalBundle, meta.passthrough, await localStore.getArticleDeletionLog());
   meta.lastSyncAt = Date.now();
   meta.lastValues = Object.fromEntries(SYNC_KEYS.map((key) => [key, stable(finalValues[key])]));
   setMeta(meta);

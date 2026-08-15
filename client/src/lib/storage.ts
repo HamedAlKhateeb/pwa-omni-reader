@@ -9,6 +9,16 @@ const DB_NAME = "omni-reader-local";
 const DB_VERSION = 1;
 const STORES = ["articles", "folders", "notes", "highlights", "settings"] as const;
 type StoreName = (typeof STORES)[number];
+const ARTICLE_DELETION_LOG_KEY = "reader_deleted";
+
+export type ArticleDeletionLog = Record<string, number>;
+
+function normalizeDeletionLog(value: unknown): ArticleDeletionLog {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .map(([url, timestamp]) => [url, Number(timestamp) || 0] as const)
+    .filter(([url, timestamp]) => Boolean(url) && timestamp > 0));
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -72,6 +82,19 @@ async function clear(store: StoreName): Promise<void> {
   });
 }
 
+async function getArticleDeletionLog(): Promise<ArticleDeletionLog> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction("settings", "readonly").objectStore("settings").get(ARTICLE_DELETION_LOG_KEY);
+    request.onsuccess = () => resolve(normalizeDeletionLog(request.result?.value));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function setArticleDeletionLog(value: ArticleDeletionLog): Promise<void> {
+  await put("settings", { key: ARTICLE_DELETION_LOG_KEY, value: normalizeDeletionLog(value) });
+}
+
 export const localStore = {
   getArticles: () => getAll<Article>("articles"),
   saveArticle: (article: Article) => put("articles", article),
@@ -94,6 +117,29 @@ export const localStore = {
     });
   },
   saveSettings: (settings: ReaderSettings) => put("settings", { key: "reader", value: settings }),
+  getArticleDeletionLog,
+  setArticleDeletionLog,
+  async recordArticleDeletion(url: string, timestamp = Date.now()) {
+    if (!url) return;
+    const current = await getArticleDeletionLog();
+    const next = { ...current, [url]: Math.max(current[url] || 0, timestamp) };
+    const limited = Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, 500));
+    await setArticleDeletionLog(limited);
+  },
+  async applyArticleDeletions(deletions: ArticleDeletionLog) {
+    const normalized = normalizeDeletionLog(deletions);
+    if (!Object.keys(normalized).length) return false;
+    const [articles, notes, highlights] = await Promise.all([getAll<Article>("articles"), getAll<Note>("notes"), getAll<Highlight>("highlights")]);
+    const removedArticles = articles.filter((article) => (normalized[article.url] || 0) >= Math.max(article.updatedAt || 0, article.savedAt || 0));
+    if (!removedArticles.length) return false;
+    const articleIds = new Set(removedArticles.map((article) => article.id));
+    await Promise.all([
+      ...removedArticles.map((article) => remove("articles", article.id)),
+      ...notes.filter((note) => note.articleId && articleIds.has(note.articleId)).map((note) => remove("notes", note.id)),
+      ...highlights.filter((highlight) => articleIds.has(highlight.articleId)).map((highlight) => remove("highlights", highlight.id)),
+    ]);
+    return true;
+  },
   async exportAll(): Promise<ExportBundle> {
     const [articles, folders, notes, highlights, settings] = await Promise.all([
       getAll<Article>("articles"), getAll<Folder>("folders"), getAll<Note>("notes"), getAll<Highlight>("highlights"), this.getSettings(),
@@ -101,6 +147,7 @@ export const localStore = {
     return { version: 1, exportedAt: Date.now(), articles, folders, notes, highlights, settings };
   },
   async importAll(bundle: ExportBundle): Promise<void> {
+    const deletionLog = await getArticleDeletionLog();
     const db = await openDb();
     const transaction = db.transaction(STORES, "readwrite");
     for (const store of STORES) transaction.objectStore(store).clear();
@@ -109,6 +156,7 @@ export const localStore = {
     bundle.notes.forEach((item) => transaction.objectStore("notes").put(item));
     bundle.highlights.forEach((item) => transaction.objectStore("highlights").put(item));
     transaction.objectStore("settings").put({ key: "reader", value: bundle.settings });
+    if (Object.keys(deletionLog).length) transaction.objectStore("settings").put({ key: ARTICLE_DELETION_LOG_KEY, value: deletionLog });
     return new Promise((resolve, reject) => {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);

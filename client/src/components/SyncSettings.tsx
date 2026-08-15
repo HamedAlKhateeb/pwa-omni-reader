@@ -37,6 +37,7 @@ const keyName: Record<SyncConflict["key"], string> = {
   reader_rtl: "اتجاه القراءة",
   reader_show_photos: "إظهار الصور",
   library_bg_color: "خلفية المكتبة",
+  reader_deleted: "سجل حذف المقالات",
 };
 
 export default function SyncSettings({ onSyncFinished }: Props) {
