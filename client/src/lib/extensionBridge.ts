@@ -4,7 +4,7 @@
  */
 import type { Article, ExportBundle, Highlight, Note, ReaderSettings } from "./types";
 import { defaultReaderSettings } from "./types";
-import { savedAtOf, toEpochMillis } from "./article";
+import { cleanHtml, savedAtOf, toEpochMillis } from "./article";
 
 const CHANNEL = "masar-omni-reader-bridge";
 const REQUEST_TIMEOUT = 4500;
@@ -55,7 +55,7 @@ export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSetti
   const bookmarks = (data.reader_bookmarks && typeof data.reader_bookmarks === "object" ? data.reader_bookmarks : {}) as Record<string, Record<string, unknown>>;
   const now = Date.now();
   const articles: Article[] = Object.entries(bookmarks).map(([url, item]) => {
-    const text = typeof item.text === "string" ? item.text : "";
+    const text = typeof item.text === "string" ? cleanHtml(item.text, url) : "";
     const title = typeof item.title === "string" && item.title.trim() ? item.title : url;
     const updatedAt = toEpochMillis(item.ts ?? item.updatedAt ?? item.lastOpenedAt, now);
     const savedAt = toEpochMillis(item.savedAt ?? item.createdAt ?? item.created, updatedAt);

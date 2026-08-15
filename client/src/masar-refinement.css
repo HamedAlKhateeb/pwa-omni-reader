@@ -99,3 +99,26 @@
     box-shadow: -12px 0 30px rgba(31, 41, 38, .18) !important;
   }
 }
+
+/* The reader owns its geometry. Saved articles never inherit vertical writing,
+   magazine columns, or a narrow desktop canvas from their source page. */
+.reader-scroll {
+  padding-inline: clamp(16px, 3.5vw, 64px) !important;
+}
+
+.reader-paper {
+  width: 100% !important;
+}
+
+.reader-content,
+.reader-content * {
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  columns: auto !important;
+  column-count: auto !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 760px) {
+  .reader-paper { width: 100% !important; }
+}

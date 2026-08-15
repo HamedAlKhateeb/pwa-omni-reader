@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { localStore } from "./storage";
-import { defaultReaderSettings, type Article, type ExportBundle } from "./types";
+import { defaultReaderSettings, type Article, type ExportBundle, type Highlight, type Note } from "./types";
+import type { ItemDeletionLog } from "./storage";
 
-type Device = { articles: Article[] };
+type Device = { articles: Article[]; notes?: Note[]; highlights?: Highlight[]; itemDeletionLog?: ItemDeletionLog };
 type CloudRow = { user_id: string; data_key: string; data_value: unknown; updated_at: string };
 
 const article: Article = {
@@ -25,17 +26,21 @@ const article: Article = {
 };
 
 function bundle(device: Device): ExportBundle {
-  return { version: 1, exportedAt: Date.now(), articles: structuredClone(device.articles), folders: [], notes: [], highlights: [], settings: defaultReaderSettings };
+  return { version: 1, exportedAt: Date.now(), articles: structuredClone(device.articles), folders: [], notes: structuredClone(device.notes || []), highlights: structuredClone(device.highlights || []), settings: defaultReaderSettings };
 }
 
 function attachDevice(device: Device) {
   vi.spyOn(localStore, "exportAll").mockImplementation(async () => bundle(device));
   vi.spyOn(localStore, "getArticles").mockImplementation(async () => structuredClone(device.articles));
   vi.spyOn(localStore, "saveArticle").mockImplementation(async (next) => { const index = device.articles.findIndex((item) => item.id === next.id); if (index >= 0) device.articles[index] = structuredClone(next); else device.articles.push(structuredClone(next)); });
-  vi.spyOn(localStore, "importAll").mockImplementation(async (next) => { device.articles = structuredClone(next.articles); });
+  vi.spyOn(localStore, "importAll").mockImplementation(async (next) => { device.articles = structuredClone(next.articles); device.notes = structuredClone(next.notes); device.highlights = structuredClone(next.highlights); });
   vi.spyOn(localStore, "getArticleDeletionLog").mockResolvedValue({});
   vi.spyOn(localStore, "setArticleDeletionLog").mockResolvedValue();
   vi.spyOn(localStore, "applyArticleDeletions").mockResolvedValue(false);
+  vi.spyOn(localStore, "getItemDeletionLog").mockImplementation(async () => structuredClone(device.itemDeletionLog || { notes: {}, highlights: {} }));
+  vi.spyOn(localStore, "setItemDeletionLog").mockImplementation(async (next) => { device.itemDeletionLog = structuredClone(next); });
+  vi.spyOn(localStore, "applyItemDeletions").mockResolvedValue(false);
+  vi.spyOn(localStore, "removeOrphanedAnnotations").mockResolvedValue(false);
 }
 
 describe("مزامنة النص الكامل بين جهازين", () => {
@@ -79,5 +84,18 @@ describe("مزامنة النص الكامل بين جهازين", () => {
     expect(phone.articles).toHaveLength(1);
     expect(phone.articles[0].content).toBe(article.content);
     expect(phone.articles[0].sourceStatus).toBe("cached");
+  });
+
+  it("لا يعيد ملاحظة بعيدة حُذفت محليًا بعد دورة مزامنة كاملة", async () => {
+    const { fullSync } = await import("./supabaseSync");
+    const deletedAt = 2_000;
+    cloud.set("reader_notes", { user_id: "user_1", data_key: "reader_notes", data_value: [{ id: "note_old", content: "ملاحظة بعيدة", created: 1_000, lastModified: 1_000 }], updated_at: new Date().toISOString() });
+    cloud.set("reader_deleted_items", { user_id: "user_1", data_key: "reader_deleted_items", data_value: { notes: { note_old: deletedAt }, highlights: {} }, updated_at: new Date().toISOString() });
+    const device: Device = { articles: [], notes: [], itemDeletionLog: { notes: { note_old: deletedAt }, highlights: {} } };
+    attachDevice(device);
+
+    expect((await fullSync()).ok).toBe(true);
+    expect(device.notes).toEqual([]);
+    expect(cloud.get("reader_notes")?.data_value).toEqual([]);
   });
 });

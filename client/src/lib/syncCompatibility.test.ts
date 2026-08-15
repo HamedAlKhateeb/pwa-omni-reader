@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { smartMerge } from "./supabaseSync";
@@ -50,5 +51,21 @@ describe("Omni Reader sync compatibility", () => {
     const merged = extensionSnapshotToBundle(bundleToExtensionSnapshot(local), defaultReaderSettings);
     const mergedWithCloud = mergeExtensionBundle(merged, cloud);
     expect(mergedWithCloud.articles[0]).toMatchObject({ title: "عنوان محدّث", savedAt: 1_700_000_000_000 });
+  });
+
+  it("normalizes encoded extension HTML before it enters the shared library", () => {
+    const snapshot = {
+      reader_bookmarks: {
+        "https://nama-center.com/article": {
+          title: "مقال عربي",
+          text: "&lt;p class=&quot;MsoNormal&quot; style=&quot;writing-mode:vertical-rl&quot;&gt;نص عربي&lt;/p&gt;",
+          ts: 1_750_000_000_000,
+        },
+      },
+    };
+    const parsed = extensionSnapshotToBundle(snapshot, defaultReaderSettings);
+    expect(parsed.articles[0].content).toContain("<p>");
+    expect(parsed.articles[0].content).toContain("نص عربي");
+    expect(parsed.articles[0].content).not.toMatch(/&lt;|MsoNormal|writing-mode|style=/i);
   });
 });

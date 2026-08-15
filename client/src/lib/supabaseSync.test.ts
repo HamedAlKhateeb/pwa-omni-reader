@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { articleContentPayload, hydrateArticleFromRemote, mergeArticleDeletionLogs, smartMerge } from "./supabaseSync";
+import { articleContentPayload, hydrateArticleFromRemote, mergeArticleDeletionLogs, mergeItemDeletionLogs, smartMerge } from "./supabaseSync";
 
 describe("سجل حذف المقالات المتزامن", () => {
   it("يجمع سجلات الحذف ويحتفظ بأحدث وقت لكل رابط", () => {
@@ -35,6 +36,14 @@ describe("سجل حذف المقالات المتزامن", () => {
     expect(merged).toEqual({
       [url]: { title: "مقال جديد", ts: 3_000 },
     });
+  });
+
+  it("يجمع سجل حذف الملاحظات والتمييزات ويمنع العناصر البعيدة القديمة من العودة", () => {
+    const tombstones = mergeItemDeletionLogs({ notes: { note_1: 2_000 }, highlights: { hl_1000_a: 2_000 } }, { notes: { note_1: 2_500 }, highlights: { hl_1000_a: 2_100 } });
+    expect(tombstones).toEqual({ notes: { note_1: 2_500 }, highlights: { hl_1000_a: 2_100 } });
+
+    expect(smartMerge("reader_notes", [], [{ id: "note_1", content: "ملاحظة قديمة", created: 1_000, lastModified: 1_000 }], {}, tombstones)).toEqual([]);
+    expect(smartMerge("reader_highlights", {}, { "https://example.com": [{ id: "hl_1000_a", quote: "تمييز قديم" }] }, {}, tombstones)).toEqual({});
   });
 
   it("يحوّل بطاقة مزامنة بلا محتوى إلى مقال مخزّن بعد الاستخراج", () => {

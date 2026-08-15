@@ -19,4 +19,9 @@ describe("لغة مخاطبة مسار", () => {
     });
     expect(matches).toEqual([]);
   });
+
+  it("لا تعرض بطاقة المقال رسالة المحتوى الناقص العامة", () => {
+    const home = readFileSync(resolve(sourceRoot, "src/pages/Home.tsx"), "utf8");
+    expect(home).not.toContain("حُفظ هذا الرابط دون استخراج محتوى بعد.");
+  });
 });

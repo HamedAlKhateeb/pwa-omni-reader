@@ -36,4 +36,11 @@ describe("extractArticleFromHtml", () => {
     expect(isDynamicTemplateContent(template)).toBe(true);
     expect(() => extractArticleFromHtml(template, "https://example.test/dynamic")).toThrow("قالب JavaScript خام");
   });
+
+  it("decodes textified Word HTML before cleaning the readable article", () => {
+    const encoded = `&lt;p class=&quot;MsoNormal&quot; dir=&quot;RTL&quot; style=&quot;writing-mode:vertical-rl&quot;&gt;${"هذا نص عربي صالح للقراءة بعد فك الترميز. ".repeat(8)}&lt;/p&gt;`;
+    const article = extractArticleFromHtml(`<html><body><article>${encoded}</article></body></html>`, "https://example.test/arabic");
+    expect(article.content).toContain("هذا نص عربي صالح");
+    expect(article.content).not.toMatch(/&lt;|&quot;|MsoNormal|writing-mode|style=|dir=/i);
+  });
 });

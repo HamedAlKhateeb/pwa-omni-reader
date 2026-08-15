@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { createArticle, extractArticleFromHtml, isBrokenArticleContent, newestSavedFirst, sortArticlesBySavedAt, toEpochMillis } from "./article";
+import { cleanHtml, createArticle, extractArticleFromHtml, isBrokenArticleContent, newestSavedFirst, repairStoredArticleContent, sortArticlesBySavedAt, toEpochMillis } from "./article";
 
 describe("extractArticleFromHtml", () => {
   it("uses Mozilla Readability to isolate article text and remove active markup", () => {
@@ -36,5 +36,25 @@ describe("extractArticleFromHtml", () => {
       { id: "local", savedAt: 1_750_000_000_000, updatedAt: 1_750_000_000_000 },
     ];
     expect(sortArticlesBySavedAt(byArrivalOrder).map((item) => item.id)).toEqual(["local", "cloud", "extension"]);
+  });
+
+  it("decodes stored HTML text and strips Word and magazine layout attributes", () => {
+    const encoded = `&lt;p class=&quot;MsoNormal&quot; dir=&quot;RTL&quot; style=&quot;writing-mode:vertical-rl;line-height:250%;font-family:Al Tarikh&quot;&gt;نص عربي سليم&lt;/p&gt;`;
+    const clean = cleanHtml(encoded, "https://nama-center.com/article");
+    expect(clean).toContain("نص عربي سليم");
+    expect(clean).toContain("<p>");
+    expect(clean).not.toMatch(/&lt;|&quot;|MsoNormal|writing-mode|style=|dir=/i);
+  });
+
+  it("repairs an old encoded article and marks an unrecoverable template for re-extraction", () => {
+    const encoded = { ...createArticle("https://example.test/old", "قديم"), content: "&lt;p style=&quot;writing-mode:vertical-rl&quot;&gt;نص محفوظ&lt;/p&gt;", excerpt: "قديم", sourceStatus: "cached" as const };
+    const repaired = repairStoredArticleContent(encoded);
+    expect(repaired).toMatchObject({ changed: true, requiresExtraction: false });
+    expect(repaired.article.content).toContain("نص محفوظ");
+    expect(repaired.article.content).not.toMatch(/&lt;|writing-mode|style=/i);
+
+    const broken = repairStoredArticleContent({ ...encoded, content: "<p>{{vm.title}}</p>", excerpt: "قالب" });
+    expect(broken).toMatchObject({ changed: true, requiresExtraction: true });
+    expect(broken.article).toMatchObject({ content: "", sourceStatus: "link-only" });
   });
 });

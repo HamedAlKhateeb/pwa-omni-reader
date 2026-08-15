@@ -7,6 +7,20 @@ import type { Article, Highlight } from "./types";
 
 export function makeId(prefix = "item") { return `${prefix}_${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`}`; }
 export function wordCount(html: string) { return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean).length; }
+function hasEncodedMarkup(value: string) {
+  return /&(?:amp;)*(?:lt|#0*60|#x0*3c);\s*\/?(?:p|div|span|h[1-6]|table|img|figure|br)\b/i.test(value);
+}
+export function decodeArticleMarkup(value: string) {
+  let decoded = value;
+  for (let pass = 0; pass < 2 && hasEncodedMarkup(decoded); pass += 1) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = decoded;
+    const next = textarea.value;
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
+}
 export function toEpochMillis(value: unknown, fallback = 0) {
   const timestamp = Number(value);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return fallback;
@@ -37,7 +51,7 @@ function safeAbsoluteUrl(value: string, baseUrl: string) {
 }
 
 export function cleanHtml(html: string, baseUrl = "https://example.invalid/") {
-  const doc = new DOMParser().parseFromString(html, "text/html");
+  const doc = new DOMParser().parseFromString(decodeArticleMarkup(html), "text/html");
   doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base,svg,canvas").forEach((node) => node.remove());
   Array.from(doc.body.querySelectorAll("*")).forEach((node) => {
     const tag = node.tagName.toLowerCase();
@@ -70,6 +84,15 @@ export function cleanHtml(html: string, baseUrl = "https://example.invalid/") {
     }
   });
   return doc.body.innerHTML;
+}
+export type StoredArticleRepair = { article: Article; changed: boolean; requiresExtraction: boolean };
+export function repairStoredArticleContent(article: Article): StoredArticleRepair {
+  const content = cleanHtml(article.content || "", article.url);
+  const requiresExtraction = !content.trim() || isBrokenArticleContent(content);
+  const repaired: Article = requiresExtraction
+    ? { ...article, content: "", excerpt: "", contentUpdatedAt: undefined, sourceStatus: "link-only" }
+    : { ...article, content, excerpt: content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180), sourceStatus: "cached" };
+  return { article: repaired, changed: repaired.content !== article.content || repaired.excerpt !== article.excerpt || repaired.sourceStatus !== article.sourceStatus, requiresExtraction };
 }
 export function createArticle(url: string, title?: string, content = ""): Article { const now = Date.now(); const cleaned = cleanHtml(content, url); const safeContent = isBrokenArticleContent(cleaned) ? "" : cleaned; const words = wordCount(safeContent); let hostname = url; try { hostname = new URL(url).hostname.replace(/^www\./, ""); } catch { /* input is validated by caller */ } return { id: makeId("article"), url, title: title?.trim() || hostname || "مقال محفوظ", content: safeContent, excerpt: safeContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180), tags: [], savedAt: now, updatedAt: now, contentUpdatedAt: safeContent ? now : undefined, progress: 0, isRead: false, isArchived: false, isFavorite: false, readingTimeMinutes: words ? Math.max(1, Math.round(words / 220)) : 0, sourceStatus: safeContent ? "cached" : "link-only" }; }
 function resolveLazyImages(doc: Document) { doc.querySelectorAll("img").forEach((image) => { const preferred = image.getAttribute("data-src") || image.getAttribute("data-original") || image.getAttribute("data-lazy-src"); if (preferred) image.setAttribute("src", preferred); const srcset = image.getAttribute("data-srcset") || image.getAttribute("srcset"); if (srcset) { const best = srcset.split(",").map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean).pop(); if (best) image.setAttribute("src", best); } }); }

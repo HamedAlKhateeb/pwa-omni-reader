@@ -50,6 +50,7 @@ export type ReaderSettings = {
   lineHeight: number;
   wordSpacing: number;
   width: number;
+  widthCustomized?: boolean;
   fontFamily: "serif" | "sans" | "mono";
   textAlign: "right" | "left" | "justify";
   theme: "light" | "cream" | "sepia" | "dark";
@@ -65,7 +66,7 @@ export const defaultReaderSettings: ReaderSettings = {
   fontSize: 19,
   lineHeight: 1.9,
   wordSpacing: 0,
-  width: 760,
+  width: 980,
   fontFamily: "serif",
   textAlign: "right",
   theme: "cream",

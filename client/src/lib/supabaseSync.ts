@@ -1,5 +1,5 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
-import { localStore, type ArticleDeletionLog } from "./storage";
+import { localStore, type ArticleDeletionLog, type ItemDeletionLog } from "./storage";
 import { cleanHtml, isBrokenArticleContent } from "./article";
 import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
 import type { Article, ExportBundle, ReaderSettings } from "./types";
@@ -10,7 +10,7 @@ export const SYNC_KEYS = [
   "reader_auto_open_enabled", "reader_positions", "reader_theme", "reader_font_size",
   "reader_font", "reader_align", "reader_width", "reader_line_height",
   "reader_word_spacing", "reader_rtl", "reader_show_photos", "library_bg_color",
-  "reader_deleted",
+  "reader_deleted", "reader_deleted_items",
 ] as const;
 
 export type SyncKey = (typeof SYNC_KEYS)[number];
@@ -237,7 +237,7 @@ async function authorizedRequest(path: string, init: RequestInit = {}) {
   return { ...result, session };
 }
 
-function syncValuesFromBundle(bundle: ExportBundle, passthrough: SyncMeta["passthrough"], deletionLog: ArticleDeletionLog): SyncValues {
+function syncValuesFromBundle(bundle: ExportBundle, passthrough: SyncMeta["passthrough"], deletionLog: ArticleDeletionLog, itemDeletionLog: ItemDeletionLog): SyncValues {
   const snapshot = bundleToExtensionSnapshot(bundle) as SyncValues;
   return {
     ...passthrough,
@@ -245,6 +245,7 @@ function syncValuesFromBundle(bundle: ExportBundle, passthrough: SyncMeta["passt
     reader_custom_rules: passthrough.reader_custom_rules || [],
     reader_positions: passthrough.reader_positions || {},
     reader_deleted: deletionLog,
+    reader_deleted_items: itemDeletionLog,
   };
 }
 
@@ -282,8 +283,24 @@ export function mergeArticleDeletionLogs(...logs: unknown[]): ArticleDeletionLog
   }, {});
 }
 
-export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unknown, deletionLog: ArticleDeletionLog = {}) {
+export function normalizeItemDeletionLog(value: unknown): ItemDeletionLog {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return { notes: normalizeArticleDeletionLog(raw.notes), highlights: normalizeArticleDeletionLog(raw.highlights) };
+}
+
+export function mergeItemDeletionLogs(...logs: unknown[]): ItemDeletionLog {
+  return logs.reduce<ItemDeletionLog>((merged, candidate) => {
+    const normalized = normalizeItemDeletionLog(candidate);
+    (Object.keys(merged) as Array<keyof ItemDeletionLog>).forEach((kind) => {
+      Object.entries(normalized[kind]).forEach(([id, timestamp]) => { merged[kind][id] = Math.max(merged[kind][id] || 0, timestamp); });
+    });
+    return merged;
+  }, { notes: {}, highlights: {} });
+}
+
+export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unknown, deletionLog: ArticleDeletionLog = {}, itemDeletionLog: ItemDeletionLog = { notes: {}, highlights: {} }) {
   if (key === "reader_deleted") return mergeArticleDeletionLogs(localValue, serverValue);
+  if (key === "reader_deleted_items") return mergeItemDeletionLogs(localValue, serverValue);
   if (localValue === undefined || localValue === null) return serverValue;
   if (serverValue === undefined || serverValue === null) return localValue;
   if (key === "reader_bookmarks") {
@@ -308,7 +325,7 @@ export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unkno
       remoteList.forEach((item) => { if (!byId.has(String(item.id))) byId.set(String(item.id), item); });
       merged[url] = Array.from(byId.values());
     });
-    return merged;
+    return Object.fromEntries(Object.entries(merged).map(([url, items]) => [url, items.filter((item) => (itemDeletionLog.highlights[String(item.id)] || 0) < newerValue(item))]).filter(([, items]) => items.length));
   }
   if (["reader_notes", "reader_folders", "reader_custom_rules"].includes(key)) {
     if (!Array.isArray(localValue) || !Array.isArray(serverValue)) return serverValue;
@@ -318,7 +335,7 @@ export function smartMerge(key: SyncKey, localValue: unknown, serverValue: unkno
       const current = merged.get(id) as Record<string, unknown> | undefined;
       if (!current || newerValue(remote as Record<string, unknown>) > newerValue(current)) merged.set(id, remote);
     });
-    return Array.from(merged.values());
+    return key === "reader_notes" ? Array.from(merged.values()).filter((item) => (itemDeletionLog.notes[String((item as { id?: unknown }).id)] || 0) < newerValue(item as Record<string, unknown>)) : Array.from(merged.values());
   }
   if (key === "reader_important_sites") {
     if (!Array.isArray(localValue) || !Array.isArray(serverValue)) return serverValue;
@@ -425,6 +442,7 @@ async function applyServerValues(values: SyncValues, fallbackSettings: ReaderSet
   const remoteBundle = extensionSnapshotToBundle(values, fallbackSettings);
   const merged = mergeExtensionBundle(current, remoteBundle);
   await localStore.importAll({ ...merged, settings: remoteBundle.settings });
+  await localStore.removeOrphanedAnnotations();
 }
 
 async function applyRemoteArticleContents(remote: RemoteData, deletionLog: ArticleDeletionLog) {
@@ -446,16 +464,17 @@ async function applyRemoteArticleContents(remote: RemoteData, deletionLog: Artic
 }
 
 export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtractedArticle, timestamp = Date.now()): Article {
+  const content = cleanHtml(extracted.content, article.url);
   return {
     ...article,
     title: article.title && article.title !== article.url ? article.title : extracted.title,
-    content: extracted.content,
-    excerpt: extracted.excerpt || article.excerpt,
+    content,
+    excerpt: content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220) || extracted.excerpt || article.excerpt,
     image: article.image || extracted.image,
     readingTimeMinutes: extracted.readingTimeMinutes || article.readingTimeMinutes,
     updatedAt: Math.max(article.updatedAt || 0, timestamp),
     contentUpdatedAt: timestamp,
-    sourceStatus: "cached",
+    sourceStatus: content && !isBrokenArticleContent(content) ? "cached" : "link-only",
   };
 }
 
@@ -489,14 +508,18 @@ export async function fullSync(): Promise<SyncResult> {
   try {
     const session = getSession();
     if (!session) return { ok: false, error: "سجّل الدخول أولًا للمزامنة.", conflicts: [] };
-    const [initialBundle, remote, localDeletionLog] = await Promise.all([localStore.exportAll(), pullAll(), localStore.getArticleDeletionLog()]);
+    const [initialBundle, remote, localDeletionLog, localItemDeletionLog] = await Promise.all([localStore.exportAll(), pullAll(), localStore.getArticleDeletionLog(), localStore.getItemDeletionLog()]);
     const meta = getMeta();
     const deletionLog = mergeArticleDeletionLogs(localDeletionLog, remote.reader_deleted?.value);
+    const itemDeletionLog = mergeItemDeletionLogs(localItemDeletionLog, remote.reader_deleted_items?.value);
     const deletionLogChanged = stable(deletionLog) !== stable(localDeletionLog);
+    const itemDeletionLogChanged = stable(itemDeletionLog) !== stable(localItemDeletionLog);
     if (deletionLogChanged) await localStore.setArticleDeletionLog(deletionLog);
+    if (itemDeletionLogChanged) await localStore.setItemDeletionLog(itemDeletionLog);
     const deletedLocally = await localStore.applyArticleDeletions(deletionLog);
-    const bundle = deletedLocally ? await localStore.exportAll() : initialBundle;
-    const localValues = syncValuesFromBundle(bundle, meta.passthrough, deletionLog);
+    const deletedItemsLocally = await localStore.applyItemDeletions(itemDeletionLog);
+    const bundle = deletedLocally || deletedItemsLocally ? await localStore.exportAll() : initialBundle;
+    const localValues = syncValuesFromBundle(bundle, meta.passthrough, deletionLog, itemDeletionLog);
     const applyFromServer: SyncValues = {};
     const nextPassthrough = { ...meta.passthrough };
     const conflicts: SyncConflict[] = [];
@@ -506,7 +529,7 @@ export async function fullSync(): Promise<SyncResult> {
       const localValue = localValues[key];
       const remoteEntry = remote[key];
       const localChanged = stable(localValue) !== meta.lastValues[key];
-      if (key === "reader_deleted") {
+      if (key === "reader_deleted" || key === "reader_deleted_items") {
         if (!remoteEntry || stable(localValue) !== stable(remoteEntry.value)) pushQueue.push({ key, value: localValue });
         continue;
       }
@@ -517,7 +540,7 @@ export async function fullSync(): Promise<SyncResult> {
       const serverChanged = new Date(remoteEntry.updatedAt).getTime() > meta.lastSyncAt;
       const collection = ["reader_bookmarks", "reader_folders", "reader_notes", "reader_highlights", "reader_custom_rules", "reader_important_sites", "reader_auto_open_sites"].includes(key);
       if (collection) {
-        const merged = smartMerge(key, localValue, remoteEntry.value, deletionLog);
+        const merged = smartMerge(key, localValue, remoteEntry.value, deletionLog, itemDeletionLog);
         applyFromServer[key] = merged;
         if (stable(merged) !== stable(remoteEntry.value)) pushQueue.push({ key, value: merged });
         continue;
@@ -534,10 +557,11 @@ export async function fullSync(): Promise<SyncResult> {
 
     // Tombstones must arrive before bookmark updates. Otherwise a second device
     // can re-upload an old bookmark in the brief gap after the library changes.
-    for (const item of [...pushQueue.filter((entry) => entry.key === "reader_deleted"), ...pushQueue.filter((entry) => entry.key !== "reader_deleted")]) await pushKey(item.key, item.value);
+    for (const item of [...pushQueue.filter((entry) => entry.key === "reader_deleted" || entry.key === "reader_deleted_items"), ...pushQueue.filter((entry) => entry.key !== "reader_deleted" && entry.key !== "reader_deleted_items")]) await pushKey(item.key, item.value);
     for (const payload of contentUploads) await pushArticleContent(payload);
     if (Object.keys(applyFromServer).length) await applyServerValues(applyFromServer, bundle.settings);
     await applyRemoteArticleContents(remote, deletionLog);
+    await localStore.removeOrphanedAnnotations();
     await hydrateMissingSyncedArticles();
     ["reader_custom_rules", "reader_positions"].forEach((key) => {
       const typedKey = key as SyncKey;
@@ -545,8 +569,8 @@ export async function fullSync(): Promise<SyncResult> {
     });
 
     const finalBundle = await localStore.exportAll();
-    const finalDeletionLog = await localStore.getArticleDeletionLog();
-    const finalValues = syncValuesFromBundle(finalBundle, nextPassthrough, finalDeletionLog);
+    const [finalDeletionLog, finalItemDeletionLog] = await Promise.all([localStore.getArticleDeletionLog(), localStore.getItemDeletionLog()]);
+    const finalValues = syncValuesFromBundle(finalBundle, nextPassthrough, finalDeletionLog, finalItemDeletionLog);
     const now = Date.now();
     setMeta({ lastSyncAt: now, lastValues: Object.fromEntries(SYNC_KEYS.map((key) => [key, stable(finalValues[key])])), passthrough: nextPassthrough });
     return { ok: true, conflicts, syncedAt: now };
@@ -563,7 +587,8 @@ export async function resolveConflict(conflict: SyncConflict, side: "local" | "s
   else await pushKey(conflict.key, selected);
   if (["reader_custom_rules", "reader_positions"].includes(conflict.key)) meta.passthrough[conflict.key] = selected;
   const finalBundle = await localStore.exportAll();
-  const finalValues = syncValuesFromBundle(finalBundle, meta.passthrough, await localStore.getArticleDeletionLog());
+  const [finalDeletionLog, finalItemDeletionLog] = await Promise.all([localStore.getArticleDeletionLog(), localStore.getItemDeletionLog()]);
+  const finalValues = syncValuesFromBundle(finalBundle, meta.passthrough, finalDeletionLog, finalItemDeletionLog);
   meta.lastSyncAt = Date.now();
   meta.lastValues = Object.fromEntries(SYNC_KEYS.map((key) => [key, stable(finalValues[key])]));
   setMeta(meta);

@@ -77,8 +77,21 @@ async function fetchHtml(raw: string) {
 
 const ALLOWED_READER_TAGS = new Set(["a", "b", "blockquote", "br", "code", "del", "div", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "mark", "ol", "p", "pre", "s", "section", "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul"]);
 
+function decodeEncodedMarkup(value: string) {
+  let decoded = value;
+  for (let pass = 0; pass < 2 && /&(?:amp;)*(?:lt|#0*60|#x0*3c);\s*\/?(?:p|div|span|h[1-6]|table|img|figure|br)\b/i.test(decoded); pass += 1) {
+    const dom = new JSDOM("<!doctype html><textarea></textarea>");
+    const textarea = dom.window.document.querySelector("textarea");
+    if (!textarea) break;
+    textarea.innerHTML = decoded;
+    if (textarea.value === decoded) break;
+    decoded = textarea.value;
+  }
+  return decoded;
+}
+
 export function cleanContent(html: string, baseUrl: string) {
-  const dom = new JSDOM(`<body>${html}</body>`, { url: baseUrl });
+  const dom = new JSDOM(`<body>${decodeEncodedMarkup(html)}</body>`, { url: baseUrl });
   const doc = dom.window.document;
   doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base,svg,canvas").forEach((node: Element) => node.remove());
   Array.from(doc.body.querySelectorAll("*")).forEach((node: Element) => {

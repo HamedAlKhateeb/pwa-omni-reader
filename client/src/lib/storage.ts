@@ -4,20 +4,28 @@
  */
 import type { Article, ExportBundle, Folder, Highlight, Note, ReaderSettings } from "./types";
 import { defaultReaderSettings } from "./types";
+import { repairStoredArticleContent } from "./article";
 
 const DB_NAME = "omni-reader-local";
 const DB_VERSION = 1;
 const STORES = ["articles", "folders", "notes", "highlights", "settings"] as const;
 type StoreName = (typeof STORES)[number];
 const ARTICLE_DELETION_LOG_KEY = "reader_deleted";
+const ITEM_DELETION_LOG_KEY = "reader_deleted_items";
 
 export type ArticleDeletionLog = Record<string, number>;
+export type ItemDeletionLog = { notes: Record<string, number>; highlights: Record<string, number> };
 
 function normalizeDeletionLog(value: unknown): ArticleDeletionLog {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .map(([url, timestamp]) => [url, Number(timestamp) || 0] as const)
     .filter(([url, timestamp]) => Boolean(url) && timestamp > 0));
+}
+
+function normalizeItemDeletionLog(value: unknown): ItemDeletionLog {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return { notes: normalizeDeletionLog(raw.notes), highlights: normalizeDeletionLog(raw.highlights) };
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -95,8 +103,27 @@ async function setArticleDeletionLog(value: ArticleDeletionLog): Promise<void> {
   await put("settings", { key: ARTICLE_DELETION_LOG_KEY, value: normalizeDeletionLog(value) });
 }
 
+async function getItemDeletionLog(): Promise<ItemDeletionLog> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction("settings", "readonly").objectStore("settings").get(ITEM_DELETION_LOG_KEY);
+    request.onsuccess = () => resolve(normalizeItemDeletionLog(request.result?.value));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function setItemDeletionLog(value: ItemDeletionLog): Promise<void> {
+  await put("settings", { key: ITEM_DELETION_LOG_KEY, value: normalizeItemDeletionLog(value) });
+}
+
 export const localStore = {
   getArticles: () => getAll<Article>("articles"),
+  async migrateArticleContents() {
+    const articles = await getAll<Article>("articles");
+    const repairs = articles.map(repairStoredArticleContent);
+    await Promise.all(repairs.filter((item) => item.changed).map((item) => put("articles", item.article)));
+    return { normalized: repairs.filter((item) => item.changed).length, requiresExtraction: repairs.filter((item) => item.requiresExtraction).map((item) => item.article) };
+  },
   saveArticle: (article: Article) => put("articles", article),
   deleteArticle: (id: string) => remove("articles", id),
   getFolders: () => getAll<Folder>("folders"),
@@ -112,13 +139,20 @@ export const localStore = {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const request = db.transaction("settings", "readonly").objectStore("settings").get("reader");
-      request.onsuccess = () => resolve({ ...defaultReaderSettings, ...(request.result?.value ?? {}) });
+      request.onsuccess = () => {
+        const saved = request.result?.value ?? {};
+        const settings = { ...defaultReaderSettings, ...saved } as ReaderSettings;
+        if (!saved.widthCustomized && Number(saved.width) === 760) settings.width = defaultReaderSettings.width;
+        resolve(settings);
+      };
       request.onerror = () => reject(request.error);
     });
   },
   saveSettings: (settings: ReaderSettings) => put("settings", { key: "reader", value: settings }),
   getArticleDeletionLog,
   setArticleDeletionLog,
+  getItemDeletionLog,
+  setItemDeletionLog,
   async recordArticleDeletion(url: string, timestamp = Date.now()) {
     if (!url) return;
     const current = await getArticleDeletionLog();
@@ -139,6 +173,29 @@ export const localStore = {
       ...highlights.filter((highlight) => articleIds.has(highlight.articleId)).map((highlight) => remove("highlights", highlight.id)),
     ]);
     return true;
+  },
+  async recordItemDeletion(kind: keyof ItemDeletionLog, id: string, timestamp = Date.now()) {
+    if (!id) return;
+    const current = await getItemDeletionLog();
+    const next = { ...current, [kind]: { ...current[kind], [id]: Math.max(current[kind][id] || 0, timestamp) } };
+    const limited = Object.fromEntries(Object.entries(next[kind]).sort((a, b) => b[1] - a[1]).slice(0, 500));
+    await setItemDeletionLog({ ...next, [kind]: limited });
+  },
+  async applyItemDeletions(deletions: ItemDeletionLog) {
+    const normalized = normalizeItemDeletionLog(deletions);
+    const [notes, highlights] = await Promise.all([getAll<Note>("notes"), getAll<Highlight>("highlights")]);
+    const noteIds = new Set(notes.filter((item) => (normalized.notes[item.id] || 0) >= Math.max(item.updatedAt || 0, item.createdAt || 0)).map((item) => item.id));
+    const highlightIds = new Set(highlights.filter((item) => (normalized.highlights[item.id] || 0) >= (item.createdAt || 0)).map((item) => item.id));
+    await Promise.all([...Array.from(noteIds).map((id) => remove("notes", id)), ...Array.from(highlightIds).map((id) => remove("highlights", id))]);
+    return noteIds.size > 0 || highlightIds.size > 0;
+  },
+  async removeOrphanedAnnotations() {
+    const [articles, notes, highlights] = await Promise.all([getAll<Article>("articles"), getAll<Note>("notes"), getAll<Highlight>("highlights")]);
+    const articleIds = new Set(articles.map((article) => article.id));
+    const staleNotes = notes.filter((note) => Boolean(note.articleId) && !articleIds.has(note.articleId!));
+    const staleHighlights = highlights.filter((highlight) => !articleIds.has(highlight.articleId));
+    await Promise.all([...staleNotes.map((note) => remove("notes", note.id)), ...staleHighlights.map((highlight) => remove("highlights", highlight.id))]);
+    return staleNotes.length > 0 || staleHighlights.length > 0;
   },
   async exportAll(): Promise<ExportBundle> {
     const [articles, folders, notes, highlights, settings] = await Promise.all([
