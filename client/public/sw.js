@@ -18,8 +18,9 @@ self.addEventListener("fetch", (event) => {
     }).catch(() => caches.match(APP_SHELL)));
     return;
   }
+  const isSameOrigin = url.origin === location.origin;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    if (response.ok && new URL(event.request.url).origin === location.origin) caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
+    if (response.ok && isSameOrigin) caches.open(CACHE).then((cache) => cache.put(event.request, response.clone()));
     return response;
-  }).catch(() => caches.match(APP_SHELL))));
+  }).catch(() => isSameOrigin ? caches.match(APP_SHELL) : Response.error()));
 });

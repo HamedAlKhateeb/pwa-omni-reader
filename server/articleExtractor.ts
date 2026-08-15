@@ -8,6 +8,7 @@ const FETCH_TIMEOUT_MS = 12_000;
 const MAX_REDIRECTS = 3;
 
 class DynamicTemplateContentError extends Error {}
+class RemoteFetchError extends Error { constructor(public readonly status: number) { super(`تعذّر الوصول إلى المقال (HTTP ${status}).`); } }
 
 export function isDynamicTemplateContent(html: string) {
   const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -63,7 +64,7 @@ async function fetchHtml(raw: string) {
       url = await validateRemoteUrl(new URL(location, url).href);
       continue;
     }
-    if (!response.ok) throw new Error(`تعذّر الوصول إلى المقال (HTTP ${response.status}).`);
+    if (!response.ok) throw new RemoteFetchError(response.status);
     const type = response.headers.get("content-type") || "";
     if (!/text\/html|application\/xhtml\+xml/i.test(type)) throw new Error("هذا الرابط لا يشير إلى صفحة HTML قابلة للقراءة.");
     const declaredSize = Number(response.headers.get("content-length") || 0);
@@ -224,10 +225,12 @@ async function extractDynamicPageWithReader(raw: string): Promise<ExtractedArtic
     headers: {
       Accept: "text/html, text/plain, application/json",
       "X-Return-Format": "html",
+      "X-Respond-With": "html",
       "X-Engine": "browser",
       "X-Respond-Timing": "network-idle",
       "X-Timeout": "20",
       "X-Token-Budget": "8000",
+      "X-No-Cache": "true",
       "X-Robots-Txt": "true",
       DNT: "1",
     },
@@ -250,12 +253,20 @@ async function extractDynamicPageWithReader(raw: string): Promise<ExtractedArtic
 }
 
 export async function extractArticleFromUrl(raw: string) {
-  const { html, url } = await fetchHtml(raw);
+  let fetched: { html: string; url: string };
   try {
-    return extractArticleFromHtml(html, url);
+    fetched = await fetchHtml(raw);
+  } catch (error) {
+    if (error instanceof RemoteFetchError && [401, 403, 408, 425, 429, 451, 500, 502, 503, 504].includes(error.status)) {
+      try { return await extractDynamicPageWithReader(raw); } catch { throw error; }
+    }
+    throw error;
+  }
+  try {
+    return extractArticleFromHtml(fetched.html, fetched.url);
   } catch (localError) {
     try {
-      return await extractDynamicPageWithReader(url);
+      return await extractDynamicPageWithReader(fetched.url);
     } catch {
       throw localError;
     }

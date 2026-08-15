@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { extractArticleFromHtml, isDynamicTemplateContent } from "./articleExtractor";
+import { describe, expect, it, vi } from "vitest";
+import { extractArticleFromHtml, extractArticleFromUrl, isDynamicTemplateContent } from "./articleExtractor";
 
 describe("extractArticleFromHtml", () => {
   it("extracts readable content and removes active markup", () => {
@@ -62,5 +62,24 @@ describe("extractArticleFromHtml", () => {
 
     expect(article.content).toContain("هذا هو نص المقال الفعلي");
     expect(article.content).not.toContain("رابط قائمة طويل");
+  });
+
+  it("uses Reader as a fallback when the source returns HTTP 403", async () => {
+    const story = "This is readable fallback article content returned by the browser reader after the source denied a direct request. ".repeat(5);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("Forbidden", { status: 403 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { url: "https://example.com/blocked", title: "Blocked article", content: `<h1>Blocked article</h1><p>${story}</p>` } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractArticleFromUrl("https://example.com/blocked")).resolves.toMatchObject({ title: "Blocked article" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not send an unsafe local URL to any fetcher", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractArticleFromUrl("http://localhost:3000/private")).rejects.toThrow("داخلية");
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
