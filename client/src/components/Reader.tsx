@@ -98,7 +98,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
-    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={() => setSelection(readSelection())}>
+    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={() => setSelection(readSelection())} onTouchEnd={() => requestAnimationFrame(() => setSelection(readSelection()))}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
         <div className="reader-source"><Bookmark size={14} /> {new URL(article.url).hostname.replace(/^www\./, "")} <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"}</div>
         <h1>{article.title}</h1>
