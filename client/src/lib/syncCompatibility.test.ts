@@ -16,6 +16,8 @@ describe("Omni Reader sync compatibility", () => {
   it("rejects extension width values that would collapse the web reader", () => {
     expect(normalizeReaderWidth(20, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);
     expect(normalizeReaderWidth(40, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);
+    expect(normalizeReaderWidth(20, 20)).toBe(defaultReaderSettings.width);
+    expect(normalizeReaderWidth(40, 40)).toBe(defaultReaderSettings.width);
     expect(normalizeReaderWidth(520, defaultReaderSettings.width)).toBe(520);
     expect(normalizeReaderWidth(1220, defaultReaderSettings.width)).toBe(1220);
     expect(normalizeReaderWidth(2000, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);

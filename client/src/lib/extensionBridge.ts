@@ -53,7 +53,9 @@ function safeProgress(value: unknown) { return Math.max(0, Math.min(100, Number(
 
 export function normalizeReaderWidth(value: unknown, fallback: number) {
   const width = Number(value);
-  return Number.isFinite(width) && width >= 520 && width <= 1220 ? width : fallback;
+  const fallbackWidth = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackWidth) && fallbackWidth >= 520 && fallbackWidth <= 1220 ? fallbackWidth : defaultReaderSettings.width;
+  return Number.isFinite(width) && width >= 520 && width <= 1220 ? width : safeFallback;
 }
 
 export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSettings: ReaderSettings): ExportBundle {
