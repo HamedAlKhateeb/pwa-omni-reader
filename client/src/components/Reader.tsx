@@ -54,10 +54,12 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     saveProgress();
   };
   const readSelection = () => window.getSelection()?.toString().trim() || "";
-  const addHighlight = () => {
+  const toggleHighlight = () => {
     const quote = selection || readSelection();
     if (!quote) return;
-    if (!readerHighlights.some((item) => item.quote === quote)) onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote, createdAt: Date.now() });
+    const existing = readerHighlights.find((item) => item.quote === quote);
+    if (existing) onRemoveHighlight(existing.id);
+    else onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote, createdAt: Date.now() });
     window.getSelection()?.removeAllRanges(); setSelection("");
   };
   const openNote = () => { const quote = selection || readSelection(); if (!quote) return; setNoteText(""); setNoteOpen(true); };
@@ -91,7 +93,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     <aside className={`reader-rail ${controlsHidden ? "reader-controls-hidden" : ""}`} aria-label="أدوات القارئ">
       <button className="rail-button" onClick={onClose} title="العودة للمكتبة"><ArrowRight size={19} /></button><span className="rail-line" />
       <button className={showSettings ? "rail-button active" : "rail-button"} onClick={() => setShowSettings((value) => !value)} title="إعدادات القراءة"><Settings2 size={19} /></button>
-      <button className="rail-button" onClick={addHighlight} title="تمييز النص المحدد"><Highlighter size={19} /></button>
+      <button className="rail-button" onClick={toggleHighlight} title="تمييز أو إلغاء تمييز النص المحدد"><Highlighter size={19} /></button>
       <button className="rail-button" onClick={openNote} title="إضافة ملاحظة إلى النص المحدد"><Quote size={19} /></button>
       <button className={speaking ? "rail-button active" : "rail-button"} onClick={toggleSpeech} title="استمع للنص"><Volume2 size={19} /></button>
       <button className="rail-button" onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title="إظهار أو إخفاء الصور"><ImageOff size={19} /></button>
@@ -104,7 +106,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
         {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} dangerouslySetInnerHTML={{ __html: html }} />}
-        {selection && <div className="selection-strip"><span>تم تحديد نص</span><button onClick={addHighlight}><Highlighter size={14} /> تمييز</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); }}><X size={14} /></button></div>}
+        {selection && <div className="selection-strip"><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); }}><X size={14} /></button></div>}
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
