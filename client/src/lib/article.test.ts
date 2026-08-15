@@ -58,6 +58,14 @@ describe("extractArticleFromHtml", () => {
     expect(broken.article).toMatchObject({ content: "", sourceStatus: "link-only" });
   });
 
+  it("marks visible image-transform URL fragments as broken content for re-extraction", () => {
+    const rawAssetText = "<p>$s_!pyy4!,w_36,h_36,c_fill,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Favatar.png</p>";
+    expect(isBrokenArticleContent(rawAssetText)).toBe(true);
+    const repaired = repairStoredArticleContent({ ...createArticle("https://piyushastrocat.substack.com/p/rabbit-holes-aneesur-rahman", "Piyush"), content: rawAssetText, contentVersion: CONTENT_PIPELINE_VERSION, sourceStatus: "cached" });
+    expect(repaired).toMatchObject({ changed: true, requiresExtraction: true });
+    expect(repaired.article).toMatchObject({ content: "", sourceStatus: "link-only" });
+  });
+
   it("يعلّم النسخة القديمة لإعادة الاستخراج ويعفي المحتوى المنشأ بالمسار الحالي", () => {
     const current = createArticle("https://example.test/current", "حالي", "<p>نص سليم</p>");
     expect(current.contentVersion).toBe(CONTENT_PIPELINE_VERSION);

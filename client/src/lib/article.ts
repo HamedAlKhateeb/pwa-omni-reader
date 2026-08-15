@@ -39,7 +39,8 @@ export function sortArticlesBySavedAt<T extends Pick<Article, "savedAt" | "updat
 }
 export function isBrokenArticleContent(html: string) {
   const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  return /{{\s*(?:vm|app|state|data|[\w$]+)\.[^}]+}}/i.test(html) || /\b(?:vm|app|state)\.(?:title|content|body|article)\b/i.test(plain);
+  const visibleAssetTokens = plain.match(/(?:substackcdn\.com\/image\/fetch|f_auto|q_auto(?::good)?|fl_progressive|c_fill|https?%3A%2F%2F)/gi) || [];
+  return /{{\s*(?:vm|app|state|data|[\w$]+)\.[^}]+}}/i.test(html) || /\b(?:vm|app|state)\.(?:title|content|body|article)\b/i.test(plain) || visibleAssetTokens.length >= 2;
 }
 export function requiresContentRefresh(article: Pick<Article, "content" | "sourceStatus" | "contentVersion">) {
   return article.sourceStatus === "cached" && Boolean(article.content.trim()) && Number(article.contentVersion || 0) < CONTENT_PIPELINE_VERSION;
