@@ -1,5 +1,6 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { localStore, type ArticleDeletionLog } from "./storage";
+import { cleanHtml } from "./article";
 import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
 import type { Article, ExportBundle, ReaderSettings } from "./types";
 
@@ -15,7 +16,17 @@ export const SYNC_KEYS = [
 export type SyncKey = (typeof SYNC_KEYS)[number];
 type SyncValues = Partial<Record<SyncKey, unknown>>;
 type RemoteEntry = { value: unknown; updatedAt: string };
-type RemoteData = Partial<Record<SyncKey, RemoteEntry>>;
+type RemoteData = Record<string, RemoteEntry>;
+
+type ArticleContentPayload = {
+  url: string;
+  content: string;
+  contentUpdatedAt: number;
+};
+
+const ARTICLE_CONTENT_PREFIX = "reader_article_content:";
+const MAX_ARTICLE_CONTENT_BYTES = 180_000;
+const MAX_ARTICLE_CONTENTS_PER_SYNC = 12;
 
 export type SyncSession = {
   accessToken: string;
@@ -339,6 +350,63 @@ export async function pushKey(key: SyncKey, value: unknown) {
   if (!response.ok) throw new Error(readAuthError(body, `تعذّر رفع ${key}.`));
 }
 
+function articleContentKey(url: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < url.length; index += 1) {
+    const code = url.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ (code + index), 0x85ebca6b);
+  }
+  return `${ARTICLE_CONTENT_PREFIX}${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}`;
+}
+
+export function articleContentPayload(article: Article): ArticleContentPayload | null {
+  const content = article.content.trim();
+  const contentUpdatedAt = Number(article.contentUpdatedAt || article.updatedAt || article.savedAt || 0);
+  if (!content || !contentUpdatedAt || new TextEncoder().encode(content).byteLength > MAX_ARTICLE_CONTENT_BYTES) return null;
+  return { url: article.url, content, contentUpdatedAt };
+}
+
+async function pushArticleContent(payload: ArticleContentPayload) {
+  const session = getSession();
+  if (!session) throw new Error("سجّل الدخول أولًا للمزامنة.");
+  const dataKey = articleContentKey(payload.url);
+  const { response, body } = await authorizedRequest("/rest/v1/user_data?on_conflict=user_id,data_key", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: session.userId, data_key: dataKey, data_value: payload, updated_at: new Date().toISOString() }),
+  });
+  if (!response.ok) throw new Error(readAuthError(body, "تعذّر رفع محتوى المقال."));
+}
+
+function parseArticleContent(value: unknown): ArticleContentPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const url = typeof item.url === "string" ? item.url : "";
+  const content = typeof item.content === "string" ? item.content : "";
+  const contentUpdatedAt = Number(item.contentUpdatedAt) || 0;
+  if (!url || !content || !contentUpdatedAt) return null;
+  return { url, content, contentUpdatedAt };
+}
+
+function articleContentsFromRemote(remote: RemoteData) {
+  return Object.entries(remote)
+    .filter(([key]) => key.startsWith(ARTICLE_CONTENT_PREFIX))
+    .map(([, entry]) => parseArticleContent(entry.value))
+    .filter((payload): payload is ArticleContentPayload => Boolean(payload));
+}
+
+function articleContentsToPush(articles: Article[], remote: RemoteData) {
+  return articles.map(articleContentPayload).filter((payload): payload is ArticleContentPayload => Boolean(payload))
+    .filter((payload) => {
+      const remotePayload = parseArticleContent(remote[articleContentKey(payload.url)]?.value);
+      return !remotePayload || remotePayload.url !== payload.url || remotePayload.contentUpdatedAt < payload.contentUpdatedAt;
+    })
+    .sort((left, right) => right.contentUpdatedAt - left.contentUpdatedAt)
+    .slice(0, MAX_ARTICLE_CONTENTS_PER_SYNC);
+}
+
 export async function pullAll(): Promise<RemoteData> {
   const session = getSession();
   if (!session) throw new Error("سجّل الدخول أولًا للمزامنة.");
@@ -347,9 +415,7 @@ export async function pullAll(): Promise<RemoteData> {
   const values: RemoteData = {};
   body.forEach((row) => {
     const item = row as { data_key?: unknown; data_value?: unknown; updated_at?: unknown };
-    if (typeof item.data_key === "string" && SYNC_KEYS.includes(item.data_key as SyncKey)) {
-      values[item.data_key as SyncKey] = { value: item.data_value, updatedAt: typeof item.updated_at === "string" ? item.updated_at : new Date(0).toISOString() };
-    }
+    if (typeof item.data_key === "string") values[item.data_key] = { value: item.data_value, updatedAt: typeof item.updated_at === "string" ? item.updated_at : new Date(0).toISOString() };
   });
   return values;
 }
@@ -361,6 +427,24 @@ async function applyServerValues(values: SyncValues, fallbackSettings: ReaderSet
   await localStore.importAll({ ...merged, settings: remoteBundle.settings });
 }
 
+async function applyRemoteArticleContents(remote: RemoteData, deletionLog: ArticleDeletionLog) {
+  const remoteContents = articleContentsFromRemote(remote);
+  if (!remoteContents.length) return 0;
+  const articles = await localStore.getArticles();
+  const byUrl = new Map(articles.map((article) => [article.url, article]));
+  let applied = 0;
+  for (const payload of remoteContents) {
+    const article = byUrl.get(payload.url);
+    if (!article || (deletionLog[payload.url] || 0) >= payload.contentUpdatedAt) continue;
+    if (article.content.trim() && Number(article.contentUpdatedAt || 0) >= payload.contentUpdatedAt) continue;
+    const content = cleanHtml(payload.content, payload.url);
+    if (!content.trim()) continue;
+    await localStore.saveArticle({ ...article, content, contentUpdatedAt: payload.contentUpdatedAt, updatedAt: Math.max(article.updatedAt || 0, payload.contentUpdatedAt), sourceStatus: "cached" });
+    applied += 1;
+  }
+  return applied;
+}
+
 export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtractedArticle, timestamp = Date.now()): Article {
   return {
     ...article,
@@ -370,6 +454,7 @@ export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtr
     image: article.image || extracted.image,
     readingTimeMinutes: extracted.readingTimeMinutes || article.readingTimeMinutes,
     updatedAt: Math.max(article.updatedAt || 0, timestamp),
+    contentUpdatedAt: timestamp,
     sourceStatus: "cached",
   };
 }
@@ -445,10 +530,14 @@ export async function fullSync(): Promise<SyncResult> {
       else if (localChanged) pushQueue.push({ key, value: localValue });
     }
 
+    const contentUploads = articleContentsToPush(bundle.articles, remote);
+
     // Tombstones must arrive before bookmark updates. Otherwise a second device
     // can re-upload an old bookmark in the brief gap after the library changes.
     for (const item of [...pushQueue.filter((entry) => entry.key === "reader_deleted"), ...pushQueue.filter((entry) => entry.key !== "reader_deleted")]) await pushKey(item.key, item.value);
+    for (const payload of contentUploads) await pushArticleContent(payload);
     if (Object.keys(applyFromServer).length) await applyServerValues(applyFromServer, bundle.settings);
+    await applyRemoteArticleContents(remote, deletionLog);
     await hydrateMissingSyncedArticles();
     ["reader_custom_rules", "reader_positions"].forEach((key) => {
       const typedKey = key as SyncKey;

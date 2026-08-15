@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hydrateArticleFromRemote, mergeArticleDeletionLogs, smartMerge } from "./supabaseSync";
+import { articleContentPayload, hydrateArticleFromRemote, mergeArticleDeletionLogs, smartMerge } from "./supabaseSync";
 
 describe("سجل حذف المقالات المتزامن", () => {
   it("يجمع سجلات الحذف ويحتفظ بأحدث وقت لكل رابط", () => {
@@ -70,5 +70,32 @@ describe("سجل حذف المقالات المتزامن", () => {
       readingTimeMinutes: 4,
       updatedAt: 2_000,
     });
+  });
+
+  it("يبني حمولة نص كامل للمقال المحلي ولا يرسل رابطًا بلا محتوى", () => {
+    const article = {
+      id: "article_full",
+      url: "https://example.com/full",
+      title: "مقال كامل",
+      content: "<p>نص محلي يُنقل إلى الجهاز الثاني.</p>",
+      excerpt: "نص محلي",
+      tags: [],
+      savedAt: 1_000,
+      updatedAt: 1_200,
+      contentUpdatedAt: 1_100,
+      progress: 0,
+      isRead: false,
+      isArchived: false,
+      isFavorite: false,
+      readingTimeMinutes: 1,
+      sourceStatus: "cached" as const,
+    };
+
+    expect(articleContentPayload(article)).toEqual({
+      url: "https://example.com/full",
+      content: "<p>نص محلي يُنقل إلى الجهاز الثاني.</p>",
+      contentUpdatedAt: 1_100,
+    });
+    expect(articleContentPayload({ ...article, content: "", sourceStatus: "link-only" })).toBeNull();
   });
 });

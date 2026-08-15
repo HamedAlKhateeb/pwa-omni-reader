@@ -20,4 +20,14 @@ describe("extractArticleFromHtml", () => {
     expect(twitter.image).toBe("https://example.test/twitter-cover.webp");
     expect(contentImage.image).toBe("https://example.test/article-cover.webp");
   });
+
+  it("removes site-specific layout attributes while preserving readable links, images, and tables", () => {
+    const text = "A readable article paragraph for testing clean reader markup. ".repeat(12);
+    const article = extractArticleFromHtml(`<!doctype html><body><article><h1>Clean reader</h1><div id="site-shell" class="theme-card" data-layout="wide" style="display:grid"><p>${text}</p><a href="/related" onclick="alert(1)">Related</a><img src="/cover.webp" width="999" style="float:left" alt="Cover"><table class="wide" style="width:1500px"><tr><th colspan="2">Header</th></tr><tr><td>One</td><td>Two</td></tr></table></div></article></body>`, "https://example.test/story");
+
+    expect(article.content).not.toMatch(/\b(id|class|style|data-layout|onclick|width)=/i);
+    expect(article.content).toContain('href="https://example.test/related"');
+    expect(article.content).toContain('src="https://example.test/cover.webp"');
+    expect(article.content).toContain('colspan="2"');
+  });
 });

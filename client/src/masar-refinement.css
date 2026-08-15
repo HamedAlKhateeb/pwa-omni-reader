@@ -41,6 +41,56 @@
   display: none !important;
 }
 
+/* The logo artwork already carries the product name; keep the adjacent line as
+   supporting copy only and suppress the legacy generated brand duplication. */
+.brand strong,
+.brand strong::after,
+.brand span::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Extracted articles may include tables, long links, and figures from sites
+   with desktop-first layouts. Keep every element within the reading paper. */
+.reader-content {
+  overflow-wrap: anywhere;
+}
+
+.reader-content :where(div, section, figure, pre, table) {
+  max-width: 100%;
+}
+
+.reader-content table {
+  display: block;
+  overflow-x: auto;
+  width: max-content;
+  min-width: min(100%, 28rem);
+  margin: 1.25em 0;
+  border-collapse: collapse;
+  border: 1px solid var(--reader-border);
+}
+
+.reader-content :where(th, td) {
+  border: 1px solid var(--reader-border);
+  padding: .55em .7em;
+  vertical-align: top;
+}
+
+.reader-content pre {
+  overflow-x: auto;
+  padding: .9em;
+  border-radius: .5em;
+  background: color-mix(in srgb, var(--reader-paper) 86%, var(--reader-ink) 14%);
+}
+
+@media (max-width: 760px) {
+  /* The header becomes sticky on phones, so the desktop shell offset created a
+     second empty band above the library. */
+  .app-shell {
+    padding-top: 0 !important;
+  }
+}
+
 /* The mobile drawer must fully cover the reading surface. */
 @media (max-width: 760px) {
   .app-sidebar {

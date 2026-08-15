@@ -30,4 +30,17 @@ describe("Omni Reader sync compatibility", () => {
     }) as Record<string, { title: string; text: string }>;
     expect(merged["https://example.com/a"]).toEqual({ title: "عنوان أحدث", text: "النص المحلي", ts: 20 });
   });
+
+  it("merges articles added independently on phone and laptop", () => {
+    const merged = smartMerge("reader_bookmarks", {
+      "https://example.com/from-phone": { title: "من الهاتف", text: "نص الهاتف", ts: 100 },
+    }, {
+      "https://example.com/from-laptop": { title: "من اللابتوب", ts: 200 },
+    }) as Record<string, { title: string; text?: string; ts: number }>;
+
+    expect(merged).toMatchObject({
+      "https://example.com/from-phone": { title: "من الهاتف", text: "نص الهاتف", ts: 100 },
+      "https://example.com/from-laptop": { title: "من اللابتوب", ts: 200 },
+    });
+  });
 });

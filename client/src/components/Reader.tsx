@@ -28,7 +28,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const lastScrollTop = useRef(0);
   const readerHighlights = useMemo(() => highlights.filter((item) => item.articleId === article.id), [highlights, article.id]);
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
-  const html = useMemo(() => renderLatexInHtml(highlightedHtml(article.content, readerHighlights)), [article.content, readerHighlights]);
+  const html = useMemo(() => renderLatexInHtml(highlightedHtml(article.content, readerHighlights, article.url)), [article.content, article.url, readerHighlights]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (noteOpen) setNoteOpen(false); else onClose(); } };

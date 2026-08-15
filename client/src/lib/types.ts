@@ -14,6 +14,7 @@ export type Article = {
   folderId?: string;
   savedAt: number;
   updatedAt: number;
+  contentUpdatedAt?: number;
   lastOpenedAt?: number;
   progress: number;
   isRead: boolean;

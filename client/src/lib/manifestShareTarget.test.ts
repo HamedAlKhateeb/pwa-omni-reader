@@ -12,7 +12,7 @@ describe("تعريف Web Share Target", () => {
     expect(manifest.id).toBe("./");
     expect(manifest.scope).toBe("./");
     expect(manifest.share_target).toMatchObject({
-      action: "./?share=1",
+      action: "./",
       method: "GET",
       params: { title: "share_title", text: "share_text", url: "share_url" },
     });

@@ -68,21 +68,35 @@ async function fetchHtml(raw: string) {
   throw new Error("تعذّر الوصول إلى المقال.");
 }
 
-function cleanContent(html: string, baseUrl: string) {
+const ALLOWED_READER_TAGS = new Set(["a", "b", "blockquote", "br", "code", "del", "div", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "mark", "ol", "p", "pre", "s", "section", "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul"]);
+
+export function cleanContent(html: string, baseUrl: string) {
   const dom = new JSDOM(`<body>${html}</body>`, { url: baseUrl });
   const doc = dom.window.document;
-  doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base").forEach((node: Element) => node.remove());
-  doc.querySelectorAll("*").forEach((node: Element) => {
-    Array.from(node.attributes).forEach((attribute) => {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value.trim().toLowerCase();
-      if (name.startsWith("on") || name === "style" || (name === "href" && value.startsWith("javascript:"))) node.removeAttribute(attribute.name);
-    });
-  });
-  doc.querySelectorAll("img").forEach((image: HTMLImageElement) => {
-   const source = image.getAttribute("data-src") || image.getAttribute("data-original") || image.getAttribute("src");
-    if (!source) return;
-    try { image.setAttribute("src", new URL(source, baseUrl).href); } catch { image.removeAttribute("src"); }
+  doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base,svg,canvas").forEach((node: Element) => node.remove());
+  Array.from(doc.body.querySelectorAll("*")).forEach((node: Element) => {
+    const tag = node.tagName.toLowerCase();
+    if (!ALLOWED_READER_TAGS.has(tag)) {
+      node.replaceWith(...Array.from(node.childNodes));
+      return;
+    }
+    const href = node.getAttribute("data-href") || node.getAttribute("href");
+    const source = node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("src");
+    const alt = node.getAttribute("alt");
+    const colspan = node.getAttribute("colspan");
+    const rowspan = node.getAttribute("rowspan");
+    Array.from(node.attributes).forEach((attribute) => node.removeAttribute(attribute.name));
+    if (tag === "a" && href) {
+      try { const target = new URL(href, baseUrl); if (["http:", "https:"].includes(target.protocol)) node.setAttribute("href", target.href); } catch { /* omit invalid links */ }
+    }
+    if (tag === "img") {
+      try { const target = source ? new URL(source, baseUrl) : null; if (target && ["http:", "https:"].includes(target.protocol)) node.setAttribute("src", target.href); else node.remove(); } catch { node.remove(); }
+      if (alt?.trim()) node.setAttribute("alt", alt.trim().slice(0, 500));
+    }
+    if (["td", "th"].includes(tag)) {
+      if (colspan && /^\d{1,2}$/.test(colspan)) node.setAttribute("colspan", colspan);
+      if (rowspan && /^\d{1,2}$/.test(rowspan)) node.setAttribute("rowspan", rowspan);
+    }
   });
   return doc.body.innerHTML;
 }
