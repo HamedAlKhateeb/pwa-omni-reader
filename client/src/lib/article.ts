@@ -44,8 +44,6 @@ export function isBrokenArticleContent(html: string) {
 export function requiresContentRefresh(article: Pick<Article, "content" | "sourceStatus" | "contentVersion">) {
   return article.sourceStatus === "cached" && Boolean(article.content.trim()) && Number(article.contentVersion || 0) < CONTENT_PIPELINE_VERSION;
 }
-const ALLOWED_READER_TAGS = new Set(["a", "b", "blockquote", "br", "code", "del", "div", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "mark", "ol", "p", "pre", "s", "section", "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul"]);
-
 function safeAbsoluteUrl(value: string, baseUrl: string) {
   try {
     const parsed = new URL(value, baseUrl);
@@ -60,18 +58,14 @@ export function cleanHtml(html: string, baseUrl = "https://example.invalid/") {
   doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base,svg,canvas").forEach((node) => node.remove());
   Array.from(doc.body.querySelectorAll("*")).forEach((node) => {
     const tag = node.tagName.toLowerCase();
-    if (!ALLOWED_READER_TAGS.has(tag)) {
-      node.replaceWith(...Array.from(node.childNodes));
-      return;
-    }
     const href = node.getAttribute("data-href") || node.getAttribute("href");
-    const source = node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("src");
+    const source = node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("data-lazy-src") || node.getAttribute("src");
     const alt = node.getAttribute("alt");
     const colspan = node.getAttribute("colspan");
     const rowspan = node.getAttribute("rowspan");
     Array.from(node.attributes).forEach((attribute) => node.removeAttribute(attribute.name));
-    if (tag === "a") {
-      const safeHref = href ? safeAbsoluteUrl(href, baseUrl) : null;
+    if (tag === "a" && href) {
+      const safeHref = safeAbsoluteUrl(href, baseUrl);
       if (safeHref) node.setAttribute("href", safeHref);
       else node.removeAttribute("href");
     }

@@ -75,8 +75,6 @@ async function fetchHtml(raw: string) {
   throw new Error("تعذّر الوصول إلى المقال.");
 }
 
-const ALLOWED_READER_TAGS = new Set(["a", "b", "blockquote", "br", "code", "del", "div", "em", "figcaption", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "mark", "ol", "p", "pre", "s", "section", "small", "span", "strong", "sub", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul"]);
-
 function decodeEncodedMarkup(value: string) {
   let decoded = value;
   for (let pass = 0; pass < 2 && /&(?:amp;)*(?:lt|#0*60|#x0*3c);\s*\/?(?:p|div|span|h[1-6]|table|img|figure|br)\b/i.test(decoded); pass += 1) {
@@ -131,14 +129,9 @@ export function cleanContent(html: string, baseUrl: string) {
   const dom = new JSDOM(`<body>${decodeEncodedMarkup(html)}</body>`, { url: baseUrl });
   const doc = dom.window.document;
   doc.querySelectorAll("script,style,iframe,object,embed,form,button,nav,aside,footer,header,link,meta,base,svg,canvas,ins,.ads,.advertisement,.promo,.sponsored,.social-share,.share-buttons,.related-posts,.comments,.comment,.disqus,.newsletter-signup,.subscription,.cookie-notice,.gdpr-banner,.contentadv,#txtright,.txtinfo,.hide720,.chapter-nav,.bottom-ad").forEach((node: Element) => node.remove());
-  normalizeRawTextParagraphs(doc);
   resolveLazyImages(doc);
   Array.from(doc.body.querySelectorAll("*")).forEach((node: Element) => {
     const tag = node.tagName.toLowerCase();
-    if (!ALLOWED_READER_TAGS.has(tag)) {
-      node.replaceWith(...Array.from(node.childNodes));
-      return;
-    }
     const href = node.getAttribute("data-href") || node.getAttribute("href");
     const source = node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("data-lazy-src") || node.getAttribute("data-original-src") || node.getAttribute("data-pin-media") || node.getAttribute("src");
     const alt = node.getAttribute("alt");

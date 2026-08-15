@@ -1,5 +1,5 @@
 /* Omni Reader offline app shell. User data itself stays in IndexedDB. */
-const CACHE = "masar-shell-v7";
+const CACHE = "masar-shell-v8";
 const APP_SHELL = new URL("./", self.registration.scope).href;
 const SHELL = [APP_SHELL, new URL("manifest.webmanifest", self.registration.scope).href];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())));
