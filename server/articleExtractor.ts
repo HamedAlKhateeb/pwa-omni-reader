@@ -7,6 +7,13 @@ const MAX_BYTES = 2_000_000;
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_REDIRECTS = 3;
 
+class DynamicTemplateContentError extends Error {}
+
+export function isDynamicTemplateContent(html: string) {
+  const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return /{{\s*(?:vm|app|state|data|[\w$]+)\.[^}]+}}/i.test(html) || /\b(?:vm|app|state)\.(?:title|content|body|article)\b/i.test(plain);
+}
+
 export type ExtractedArticle = {
   url: string;
   title: string;
@@ -144,11 +151,38 @@ export function extractArticleFromHtml(html: string, sourceUrl: string): Extract
   const rawContent = parsed?.content && parsed.content.length >= 300 ? parsed.content : fallbackContent(doc);
   const content = cleanContent(rawContent, sourceUrl);
   const plain = content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (isDynamicTemplateContent(content)) throw new DynamicTemplateContentError("أعادت الصفحة قالب JavaScript خامًا بدل نص المقال.");
   if (plain.length < 80) throw new Error("لم يتمكّن التطبيق من العثور على نص كافٍ داخل هذه الصفحة.");
   return { url: sourceUrl, title: h1 || parsed?.title || doc.title || new URL(sourceUrl).hostname, content, excerpt: parsed?.excerpt?.trim() || plain.slice(0, 220), image, readingTimeMinutes: Math.max(1, Math.round(plain.split(" ").filter(Boolean).length / 220)) };
 }
 
+async function extractDynamicPageWithReader(raw: string): Promise<ExtractedArticle> {
+  const response = await fetch(`https://r.jina.ai/${raw}`, {
+    headers: {
+      Accept: "application/json",
+      "X-Respond-With": "html",
+      "X-Engine": "browser",
+      "X-Respond-Timing": "network-idle",
+      "X-Timeout": "20",
+      "X-Token-Budget": "8000",
+      "X-Robots-Txt": "true",
+      DNT: "1",
+    },
+    signal: AbortSignal.timeout(28_000),
+  });
+  if (!response.ok) throw new Error("تعذّر الحصول على نسخة قابلة للقراءة من الصفحة الديناميكية.");
+  const body = await response.json() as { data?: unknown; title?: unknown; url?: unknown };
+  if (typeof body.data !== "string" || !body.data.trim()) throw new Error("لم تُعد خدمة الاستخراج محتوى صالحًا.");
+  const extracted = extractArticleFromHtml(`<article>${body.data}</article>`, typeof body.url === "string" ? body.url : raw);
+  return typeof body.title === "string" && body.title.trim() ? { ...extracted, title: body.title.trim() } : extracted;
+}
+
 export async function extractArticleFromUrl(raw: string) {
   const { html, url } = await fetchHtml(raw);
-  return extractArticleFromHtml(html, url);
+  try {
+    return extractArticleFromHtml(html, url);
+  } catch (error) {
+    if (error instanceof DynamicTemplateContentError) return extractDynamicPageWithReader(url);
+    throw error;
+  }
 }

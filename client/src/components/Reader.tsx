@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bookmark, Check, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
-import { highlightedHtml, makeId } from "@/lib/article";
+import { highlightedHtml, isBrokenArticleContent, makeId } from "@/lib/article";
 import { nextReaderControlsHidden } from "@/lib/readerControls";
 import { renderLatexInHtml } from "@/lib/latex";
 
@@ -29,6 +29,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const readerHighlights = useMemo(() => highlights.filter((item) => item.articleId === article.id), [highlights, article.id]);
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
   const html = useMemo(() => renderLatexInHtml(highlightedHtml(article.content, readerHighlights, article.url)), [article.content, article.url, readerHighlights]);
+  const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (noteOpen) setNoteOpen(false); else onClose(); } };
@@ -100,7 +101,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
         <div className="reader-source"><Bookmark size={14} /> {new URL(article.url).hostname.replace(/^www\./, "")} <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"}</div>
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
-        {!article.content ? <div className="reader-link-only"><FileText size={34} /><h2>المحتوى غير مخبأ بعد</h2><p>هذا الرابط محفوظ محليًا، لكن الموقع لم يسمح باستخراج النص من المتصفح. افتح المصدر أو استورد المحتوى من نسخة Omni Reader.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} dangerouslySetInnerHTML={{ __html: html }} />}
+        {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} dangerouslySetInnerHTML={{ __html: html }} />}
         {selection && <div className="selection-strip"><span>تم تحديد نص</span><button onClick={addHighlight}><Highlighter size={14} /> تمييز</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); }}><X size={14} /></button></div>}
       </article>
     </main>

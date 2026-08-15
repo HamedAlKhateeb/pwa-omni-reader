@@ -1,6 +1,6 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { localStore, type ArticleDeletionLog } from "./storage";
-import { cleanHtml } from "./article";
+import { cleanHtml, isBrokenArticleContent } from "./article";
 import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
 import type { Article, ExportBundle, ReaderSettings } from "./types";
 
@@ -438,7 +438,7 @@ async function applyRemoteArticleContents(remote: RemoteData, deletionLog: Artic
     if (!article || (deletionLog[payload.url] || 0) >= payload.contentUpdatedAt) continue;
     if (article.content.trim() && Number(article.contentUpdatedAt || 0) >= payload.contentUpdatedAt) continue;
     const content = cleanHtml(payload.content, payload.url);
-    if (!content.trim()) continue;
+    if (!content.trim() || isBrokenArticleContent(content)) continue;
     await localStore.saveArticle({ ...article, content, contentUpdatedAt: payload.contentUpdatedAt, updatedAt: Math.max(article.updatedAt || 0, payload.contentUpdatedAt), sourceStatus: "cached" });
     applied += 1;
   }
@@ -462,7 +462,7 @@ export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtr
 async function hydrateMissingSyncedArticles() {
   if (typeof navigator !== "undefined" && !navigator.onLine) return { hydrated: 0, failed: 0 };
   const articles = await localStore.getArticles();
-  const missing = articles.filter((article) => !article.content.trim());
+  const missing = articles.filter((article) => !article.content.trim() || isBrokenArticleContent(article.content));
   let hydrated = 0;
   let failed = 0;
 

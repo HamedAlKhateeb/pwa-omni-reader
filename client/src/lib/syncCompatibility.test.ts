@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bundleToExtensionSnapshot, extensionSnapshotToBundle } from "./extensionBridge";
+import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { smartMerge } from "./supabaseSync";
 import { defaultReaderSettings, type ExportBundle } from "./types";
 
@@ -42,5 +42,13 @@ describe("Omni Reader sync compatibility", () => {
       "https://example.com/from-phone": { title: "من الهاتف", text: "نص الهاتف", ts: 100 },
       "https://example.com/from-laptop": { title: "من اللابتوب", ts: 200 },
     });
+  });
+
+  it("preserves the earliest save date when newer cloud metadata replaces an article", () => {
+    const local = { ...bundle, articles: [{ ...bundle.articles[0], savedAt: 1_700_000_000_000, updatedAt: 1_700_000_000_000 }] };
+    const cloud = { ...bundle, articles: [{ ...bundle.articles[0], id: "cloud-copy", savedAt: 1_750_000_000_000, updatedAt: 1_800_000_000_000, title: "عنوان محدّث" }] };
+    const merged = extensionSnapshotToBundle(bundleToExtensionSnapshot(local), defaultReaderSettings);
+    const mergedWithCloud = mergeExtensionBundle(merged, cloud);
+    expect(mergedWithCloud.articles[0]).toMatchObject({ title: "عنوان محدّث", savedAt: 1_700_000_000_000 });
   });
 });

@@ -4,6 +4,7 @@
  */
 import type { Article, ExportBundle, Highlight, Note, ReaderSettings } from "./types";
 import { defaultReaderSettings } from "./types";
+import { savedAtOf, toEpochMillis } from "./article";
 
 const CHANNEL = "masar-omni-reader-bridge";
 const REQUEST_TIMEOUT = 4500;
@@ -56,8 +57,9 @@ export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSetti
   const articles: Article[] = Object.entries(bookmarks).map(([url, item]) => {
     const text = typeof item.text === "string" ? item.text : "";
     const title = typeof item.title === "string" && item.title.trim() ? item.title : url;
-    const ts = Number(item.ts || item.lastOpenedAt) || now;
-    return { id: idFor("ext_article", url), url, title, content: text, excerpt: text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180), image: typeof item.image === "string" ? item.image : undefined, tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === "string") : [], folderId: typeof item.folderId === "string" ? item.folderId : undefined, savedAt: ts, updatedAt: ts, contentUpdatedAt: text ? ts : undefined, lastOpenedAt: Number(item.lastOpenedAt) || undefined, progress: safeProgress(item.progress ?? item.scroll), isRead: Boolean(item.read), isArchived: Boolean(item.archived), isFavorite: Boolean(item.important), readingTimeMinutes: Number(item.readingTimeMinutes) || 0, sourceStatus: text ? "cached" : "link-only" };
+    const updatedAt = toEpochMillis(item.ts ?? item.updatedAt ?? item.lastOpenedAt, now);
+    const savedAt = toEpochMillis(item.savedAt ?? item.createdAt ?? item.created, updatedAt);
+    return { id: idFor("ext_article", url), url, title, content: text, excerpt: text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180), image: typeof item.image === "string" ? item.image : undefined, tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === "string") : [], folderId: typeof item.folderId === "string" ? item.folderId : undefined, savedAt, updatedAt, contentUpdatedAt: text ? updatedAt : undefined, lastOpenedAt: toEpochMillis(item.lastOpenedAt, 0) || undefined, progress: safeProgress(item.progress ?? item.scroll), isRead: Boolean(item.read), isArchived: Boolean(item.archived), isFavorite: Boolean(item.important), readingTimeMinutes: Number(item.readingTimeMinutes) || 0, sourceStatus: text ? "cached" : "link-only" };
   });
   const byUrl = new Map(articles.map((article) => [article.url, article.id]));
   const rawNotes = Array.isArray(data.reader_notes) ? data.reader_notes as Record<string, unknown>[] : [];
@@ -76,7 +78,7 @@ export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSetti
 
 export function mergeExtensionBundle(local: ExportBundle, extension: ExportBundle): ExportBundle {
   const byUrl = new Map(local.articles.map((article) => [article.url, article]));
-  extension.articles.forEach((remote) => { const current = byUrl.get(remote.url); if (!current || remote.updatedAt > current.updatedAt || (!current.content && remote.content)) byUrl.set(remote.url, { ...remote, id: current?.id || remote.id }); });
+  extension.articles.forEach((remote) => { const current = byUrl.get(remote.url); if (!current || remote.updatedAt > current.updatedAt || (!current.content && remote.content)) { const earliestSavedAt = current ? Math.min(savedAtOf(current), savedAtOf(remote)) : savedAtOf(remote); byUrl.set(remote.url, { ...remote, id: current?.id || remote.id, savedAt: earliestSavedAt }); } });
   const folders = [...local.folders]; extension.folders.forEach((item) => { if (!folders.some((folder) => folder.id === item.id || folder.name === item.name)) folders.push(item); });
   const notes = [...local.notes]; extension.notes.forEach((item) => { if (!notes.some((note) => note.url === item.url && note.content === item.content && note.quote === item.quote)) notes.push(item); });
   const highlights = [...local.highlights]; extension.highlights.forEach((item) => { if (!highlights.some((highlight) => highlight.articleId === item.articleId && highlight.quote === item.quote)) highlights.push(item); });
@@ -85,7 +87,7 @@ export function mergeExtensionBundle(local: ExportBundle, extension: ExportBundl
 
 export function bundleToExtensionSnapshot(bundle: ExportBundle): ExtensionSnapshot {
   const bookmarks: Record<string, unknown> = {}; const articleById = new Map(bundle.articles.map((article) => [article.id, article]));
-  bundle.articles.forEach((article) => { bookmarks[article.url] = { title: article.title, text: article.content, image: article.image, tags: article.tags, folderId: article.folderId, ts: article.updatedAt, scroll: article.progress, read: article.isRead, archived: article.isArchived, important: article.isFavorite, readingTimeMinutes: article.readingTimeMinutes, lastOpenedAt: article.lastOpenedAt }; });
+  bundle.articles.forEach((article) => { bookmarks[article.url] = { title: article.title, text: article.content, image: article.image, tags: article.tags, folderId: article.folderId, savedAt: savedAtOf(article), ts: article.updatedAt, scroll: article.progress, read: article.isRead, archived: article.isArchived, important: article.isFavorite, readingTimeMinutes: article.readingTimeMinutes, lastOpenedAt: article.lastOpenedAt }; });
   const highlightMap: Record<string, unknown[]> = {}; bundle.highlights.forEach((highlight) => { const url = articleById.get(highlight.articleId)?.url; if (!url) return; (highlightMap[url] ||= []).push({ id: highlight.id, text: highlight.quote, context: highlight.prefix || "", created: highlight.createdAt, lastModified: highlight.createdAt }); });
   return { reader_bookmarks: bookmarks, reader_folders: bundle.folders, reader_notes: bundle.notes.map((note) => ({ id: note.id, url: note.url || articleById.get(note.articleId || "")?.url, domain: note.url ? new URL(note.url).hostname : "", content: note.content, isRTL: note.isRtl, quote: note.quote, created: note.createdAt, lastModified: note.updatedAt })), reader_highlights: highlightMap, reader_theme: ["light", "cream", "sepia", "dark"].indexOf(bundle.settings.theme), reader_font_size: bundle.settings.fontSize, reader_font: bundle.settings.fontFamily, reader_align: bundle.settings.textAlign, reader_width: bundle.settings.width, reader_line_height: bundle.settings.lineHeight, reader_word_spacing: bundle.settings.wordSpacing, reader_rtl: bundle.settings.isRtl, reader_show_photos: bundle.settings.showImages, library_bg_color: bundle.settings.libraryBackground, reader_auto_open_enabled: bundle.settings.autoOpenEnabled, reader_auto_open_sites: bundle.settings.autoOpenSites, reader_important_sites: bundle.settings.importantSites };
 }

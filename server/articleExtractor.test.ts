@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractArticleFromHtml } from "./articleExtractor";
+import { extractArticleFromHtml, isDynamicTemplateContent } from "./articleExtractor";
 
 describe("extractArticleFromHtml", () => {
   it("extracts readable content and removes active markup", () => {
@@ -29,5 +29,11 @@ describe("extractArticleFromHtml", () => {
     expect(article.content).toContain('href="https://example.test/related"');
     expect(article.content).toContain('src="https://example.test/cover.webp"');
     expect(article.content).toContain('colspan="2"');
+  });
+
+  it("rejects a Vue template before it becomes a broken reader article", () => {
+    const template = `<article><h1>{{vm.title}}</h1><p>{{vm.content}}</p><p>${"placeholder ".repeat(20)}</p></article>`;
+    expect(isDynamicTemplateContent(template)).toBe(true);
+    expect(() => extractArticleFromHtml(template, "https://example.test/dynamic")).toThrow("قالب JavaScript خام");
   });
 });

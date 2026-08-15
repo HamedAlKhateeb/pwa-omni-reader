@@ -97,5 +97,6 @@ describe("سجل حذف المقالات المتزامن", () => {
       contentUpdatedAt: 1_100,
     });
     expect(articleContentPayload({ ...article, content: "", sourceStatus: "link-only" })).toBeNull();
+    expect(articleContentPayload({ ...article, content: "x".repeat(180_001) })).toBeNull();
   });
 });
