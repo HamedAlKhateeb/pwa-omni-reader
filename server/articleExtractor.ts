@@ -93,6 +93,10 @@ function plainText(html: string) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function isAntiBotPage(title: string, content: string) {
+  return /are you a robot|unusual activity|access denied|verify you are human|captcha|security check|enable javascript and cookies/i.test(`${title} ${content}`);
+}
+
 function resolveLazyImages(doc: Document) {
   doc.querySelectorAll("img").forEach((image: HTMLImageElement) => {
     const srcset = image.getAttribute("data-srcset") || image.getAttribute("srcset");
@@ -226,13 +230,6 @@ async function extractDynamicPageWithReader(raw: string): Promise<ExtractedArtic
       Accept: "text/html, text/plain, application/json",
       "X-Return-Format": "html",
       "X-Respond-With": "html",
-      "X-Engine": "browser",
-      "X-Respond-Timing": "network-idle",
-      "X-Timeout": "20",
-      "X-Token-Budget": "8000",
-      "X-No-Cache": "true",
-      "X-Robots-Txt": "true",
-      DNT: "1",
     },
     signal: AbortSignal.timeout(28_000),
   });
@@ -243,11 +240,12 @@ async function extractDynamicPageWithReader(raw: string): Promise<ExtractedArtic
   let url: unknown;
   try {
     const body = JSON.parse(rawBody) as { data?: unknown; content?: unknown; title?: unknown; url?: unknown };
-    data = typeof body.data === "object" && body.data ? (body.data as { content?: unknown }).content : body.data ?? body.content;
-    title = body.title || (typeof body.data === "object" && body.data ? (body.data as { title?: unknown }).title : undefined);
-    url = body.url || (typeof body.data === "object" && body.data ? (body.data as { url?: unknown }).url : undefined);
+    const readerData = typeof body.data === "object" && body.data ? body.data as { content?: unknown; html?: unknown; title?: unknown; url?: unknown } : undefined;
+    data = readerData?.html ?? readerData?.content ?? body.data ?? body.content;
+    title = body.title || readerData?.title;
+    url = body.url || readerData?.url;
   } catch { /* the reader may return HTML directly */ }
-  if (typeof data !== "string" || !data.trim()) throw new Error("لم تُعد خدمة الاستخراج محتوى صالحًا.");
+  if (typeof data !== "string" || !data.trim() || isAntiBotPage(typeof title === "string" ? title : "", data)) throw new Error("لم تُعد خدمة الاستخراج محتوى مقالًا قابلًا للقراءة.");
   const extracted = extractArticleFromHtml(`<article>${data}</article>`, typeof url === "string" ? url : raw);
   return typeof title === "string" && title.trim() ? { ...extracted, title: title.trim() } : extracted;
 }

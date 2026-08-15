@@ -18,7 +18,7 @@ describe("extractWithRemoteServer", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: fallbackArticle }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(extractWithRemoteServer(fallbackArticle.url)).resolves.toMatchObject({ title: "Fallback Article" });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, `https://r.jina.ai/${fallbackArticle.url}`, expect.objectContaining({ headers: expect.objectContaining({ "X-Engine": "browser", "X-No-Cache": "true" }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `https://r.jina.ai/${fallbackArticle.url}`, expect.objectContaining({ headers: { Accept: "application/json", "X-Respond-With": "html" } }));
   });
 
   it("does not send unsafe URLs to the external fallback", async () => {

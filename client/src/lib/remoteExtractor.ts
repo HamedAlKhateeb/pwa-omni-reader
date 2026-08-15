@@ -25,29 +25,24 @@ function shouldTryReaderFallback(message: string) {
   return /HTTP\s+(?:401|403|408|425|429|451|5\d{2})|تعذّر الوصول|تعذر الوصول|تعذّر استخراج|تعذر استخراج|network|fetch/i.test(message);
 }
 
+function isAntiBotPage(title: string, content: string) {
+  return /are you a robot|unusual activity|access denied|verify you are human|captcha|security check|enable javascript and cookies/i.test(`${title} ${content}`);
+}
+
 async function extractWithReader(url: string): Promise<RemoteExtractedArticle> {
   const response = await fetch(`${readerUrl}${url}`, {
-    headers: {
-      Accept: "application/json",
-      "X-Engine": "browser",
-      "X-Respond-With": "html",
-      "X-Return-Format": "html",
-      "X-Respond-Timing": "network-idle",
-      "X-Timeout": "30",
-      "X-No-Cache": "true",
-      "X-Robots-Txt": "true",
-      DNT: "1",
-    },
+    headers: { Accept: "application/json", "X-Respond-With": "html" },
     signal: AbortSignal.timeout(35_000),
   });
-  const payload = await response.json().catch(() => null) as { data?: { url?: string; title?: string; content?: string; description?: string }; url?: string; title?: string; content?: string; description?: string } | null;
+  const payload = await response.json().catch(() => null) as { data?: { url?: string; title?: string; content?: string; html?: string; description?: string }; url?: string; title?: string; content?: string; html?: string; description?: string } | null;
   const data = payload?.data || payload;
-  const content = typeof data?.content === "string" ? data.content.trim() : "";
-  if (!response.ok || !content) throw new Error("تعذّرت خدمة القراءة البديلة من الوصول إلى المقال.");
+  const content = typeof data?.html === "string" ? data.html.trim() : typeof data?.content === "string" ? data.content.trim() : "";
+  const title = typeof data?.title === "string" ? data.title.trim() : "";
+  if (!response.ok || !content || isAntiBotPage(title, content)) throw new Error("تعذّرت خدمة القراءة البديلة من الوصول إلى المقال.");
   const plain = content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   return {
     url: typeof data?.url === "string" ? data.url : url,
-    title: typeof data?.title === "string" && data.title.trim() ? data.title.trim() : new URL(url).hostname,
+    title: title || new URL(url).hostname,
     content,
     excerpt: typeof data?.description === "string" && data.description.trim() ? data.description.trim() : plain.slice(0, 220),
     readingTimeMinutes: Math.max(1, Math.round(plain.split(" ").filter(Boolean).length / 220)),
