@@ -43,4 +43,24 @@ describe("extractArticleFromHtml", () => {
     expect(article.content).toContain("هذا نص عربي صالح");
     expect(article.content).not.toMatch(/&lt;|&quot;|MsoNormal|writing-mode|style=|dir=/i);
   });
+
+  it("يحافظ على فصل النص الخام المفصول بأسطر ويحفظ الصورة المؤجلة", () => {
+    const first = "هذه فقرة عربية طويلة في نص خام، يجب أن تبقى فقرة قابلة للقراءة بعد الاستخراج حتى إن لم تستخدم الصفحة وسم الفقرة المعتاد. ".repeat(3);
+    const second = "وهذه فقرة ثانية مستقلة تساعد على التحقق من أن الفصل بين الأسطر لا يحوّل المقال إلى نص متصل أو تخطيط عمودي مشوّه. ".repeat(3);
+    const article = extractArticleFromHtml(`<html><body><article><h1>مقال نصي</h1><img src="data:image/gif;base64,AA" data-src="/lazy-cover.webp">${first}<br><br>${second}</article></body></html>`, "https://example.test/raw-text");
+
+    expect(article.content).toContain("هذه فقرة عربية طويلة");
+    expect(article.content).toContain("وهذه فقرة ثانية مستقلة");
+    expect(article.content).toContain('src="https://example.test/lazy-cover.webp"');
+    expect(article.content).toMatch(/<p>|<br\s*\/?/i);
+  });
+
+  it("يفضّل حاوية المقال على غلاف الصفحة المليء بروابط التنقل", () => {
+    const story = "هذا هو نص المقال الفعلي الذي ينبغي أن يظهر في القارئ دون قوائم الموقع وروابطه الجانبية أو عناصره الدعائية. ".repeat(6);
+    const html = `<html><body><div class="content"><nav>${"<a href='/menu'>رابط قائمة طويل</a>".repeat(25)}</nav><div class="article-content"><h1>النص الفعلي</h1><p>${story}</p></div></div></body></html>`;
+    const article = extractArticleFromHtml(html, "https://example.test/noise");
+
+    expect(article.content).toContain("هذا هو نص المقال الفعلي");
+    expect(article.content).not.toContain("رابط قائمة طويل");
+  });
 });
