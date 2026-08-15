@@ -1,6 +1,6 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { localStore, type ArticleDeletionLog, type ItemDeletionLog } from "./storage";
-import { cleanHtml, isBrokenArticleContent } from "./article";
+import { cleanHtml, CONTENT_PIPELINE_VERSION, isBrokenArticleContent } from "./article";
 import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
 import type { Article, ExportBundle, ReaderSettings } from "./types";
 
@@ -22,6 +22,7 @@ type ArticleContentPayload = {
   url: string;
   content: string;
   contentUpdatedAt: number;
+  contentVersion: number;
 };
 
 const ARTICLE_CONTENT_PREFIX = "reader_article_content:";
@@ -382,7 +383,7 @@ export function articleContentPayload(article: Article): ArticleContentPayload |
   const content = article.content.trim();
   const contentUpdatedAt = Number(article.contentUpdatedAt || article.updatedAt || article.savedAt || 0);
   if (!content || !contentUpdatedAt || new TextEncoder().encode(content).byteLength > MAX_ARTICLE_CONTENT_BYTES) return null;
-  return { url: article.url, content, contentUpdatedAt };
+  return { url: article.url, content, contentUpdatedAt, contentVersion: Number(article.contentVersion || 0) };
 }
 
 async function pushArticleContent(payload: ArticleContentPayload) {
@@ -403,8 +404,9 @@ function parseArticleContent(value: unknown): ArticleContentPayload | null {
   const url = typeof item.url === "string" ? item.url : "";
   const content = typeof item.content === "string" ? item.content : "";
   const contentUpdatedAt = Number(item.contentUpdatedAt) || 0;
+  const contentVersion = Number(item.contentVersion) || 0;
   if (!url || !content || !contentUpdatedAt) return null;
-  return { url, content, contentUpdatedAt };
+  return { url, content, contentUpdatedAt, contentVersion };
 }
 
 function articleContentsFromRemote(remote: RemoteData) {
@@ -418,7 +420,7 @@ function articleContentsToPush(articles: Article[], remote: RemoteData) {
   return articles.map(articleContentPayload).filter((payload): payload is ArticleContentPayload => Boolean(payload))
     .filter((payload) => {
       const remotePayload = parseArticleContent(remote[articleContentKey(payload.url)]?.value);
-      return !remotePayload || remotePayload.url !== payload.url || remotePayload.contentUpdatedAt < payload.contentUpdatedAt;
+      return !remotePayload || remotePayload.url !== payload.url || remotePayload.contentUpdatedAt < payload.contentUpdatedAt || remotePayload.contentVersion < payload.contentVersion;
     })
     .sort((left, right) => right.contentUpdatedAt - left.contentUpdatedAt)
     .slice(0, MAX_ARTICLE_CONTENTS_PER_SYNC);
@@ -454,10 +456,10 @@ async function applyRemoteArticleContents(remote: RemoteData, deletionLog: Artic
   for (const payload of remoteContents) {
     const article = byUrl.get(payload.url);
     if (!article || (deletionLog[payload.url] || 0) >= payload.contentUpdatedAt) continue;
-    if (article.content.trim() && Number(article.contentUpdatedAt || 0) >= payload.contentUpdatedAt) continue;
+    if (article.content.trim() && Number(article.contentUpdatedAt || 0) >= payload.contentUpdatedAt && Number(article.contentVersion || 0) >= payload.contentVersion) continue;
     const content = cleanHtml(payload.content, payload.url);
     if (!content.trim() || isBrokenArticleContent(content)) continue;
-    await localStore.saveArticle({ ...article, content, contentUpdatedAt: payload.contentUpdatedAt, updatedAt: Math.max(article.updatedAt || 0, payload.contentUpdatedAt), sourceStatus: "cached" });
+    await localStore.saveArticle({ ...article, content, contentUpdatedAt: payload.contentUpdatedAt, contentVersion: payload.contentVersion, updatedAt: Math.max(article.updatedAt || 0, payload.contentUpdatedAt), sourceStatus: "cached" });
     applied += 1;
   }
   return applied;
@@ -474,6 +476,7 @@ export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtr
     readingTimeMinutes: extracted.readingTimeMinutes || article.readingTimeMinutes,
     updatedAt: Math.max(article.updatedAt || 0, timestamp),
     contentUpdatedAt: timestamp,
+    contentVersion: CONTENT_PIPELINE_VERSION,
     sourceStatus: content && !isBrokenArticleContent(content) ? "cached" : "link-only",
   };
 }

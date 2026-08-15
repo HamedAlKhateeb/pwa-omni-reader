@@ -4,7 +4,7 @@
  */
 import type { Article, ExportBundle, Folder, Highlight, Note, ReaderSettings } from "./types";
 import { defaultReaderSettings } from "./types";
-import { repairStoredArticleContent } from "./article";
+import { repairStoredArticleContent, requiresContentRefresh } from "./article";
 
 const DB_NAME = "omni-reader-local";
 const DB_VERSION = 1;
@@ -122,7 +122,7 @@ export const localStore = {
     const articles = await getAll<Article>("articles");
     const repairs = articles.map(repairStoredArticleContent);
     await Promise.all(repairs.filter((item) => item.changed).map((item) => put("articles", item.article)));
-    return { normalized: repairs.filter((item) => item.changed).length, requiresExtraction: repairs.filter((item) => item.requiresExtraction).map((item) => item.article) };
+    return { normalized: repairs.filter((item) => item.changed).length, requiresExtraction: repairs.filter((item) => item.requiresExtraction || requiresContentRefresh(item.article)).map((item) => item.article) };
   },
   saveArticle: (article: Article) => put("articles", article),
   deleteArticle: (id: string) => remove("articles", id),

@@ -15,6 +15,7 @@ export type Article = {
   savedAt: number;
   updatedAt: number;
   contentUpdatedAt?: number;
+  contentVersion?: number;
   lastOpenedAt?: number;
   progress: number;
   isRead: boolean;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { cleanHtml, createArticle, extractArticleFromHtml, isBrokenArticleContent, newestSavedFirst, repairStoredArticleContent, sortArticlesBySavedAt, toEpochMillis } from "./article";
+import { cleanHtml, CONTENT_PIPELINE_VERSION, createArticle, extractArticleFromHtml, isBrokenArticleContent, newestSavedFirst, repairStoredArticleContent, requiresContentRefresh, sortArticlesBySavedAt, toEpochMillis } from "./article";
 
 describe("extractArticleFromHtml", () => {
   it("uses Mozilla Readability to isolate article text and remove active markup", () => {
@@ -56,5 +56,12 @@ describe("extractArticleFromHtml", () => {
     const broken = repairStoredArticleContent({ ...encoded, content: "<p>{{vm.title}}</p>", excerpt: "قالب" });
     expect(broken).toMatchObject({ changed: true, requiresExtraction: true });
     expect(broken.article).toMatchObject({ content: "", sourceStatus: "link-only" });
+  });
+
+  it("يعلّم النسخة القديمة لإعادة الاستخراج ويعفي المحتوى المنشأ بالمسار الحالي", () => {
+    const current = createArticle("https://example.test/current", "حالي", "<p>نص سليم</p>");
+    expect(current.contentVersion).toBe(CONTENT_PIPELINE_VERSION);
+    expect(requiresContentRefresh(current)).toBe(false);
+    expect(requiresContentRefresh({ ...current, contentVersion: 0 })).toBe(true);
   });
 });

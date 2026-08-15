@@ -10,7 +10,7 @@ import "./masar-refinement.css";
 import "katex/dist/katex.min.css";
 import App from "./App";
 
-if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL }).catch(() => undefined));
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL }).then((registration) => registration.update()).catch(() => undefined));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1 } } });
 const trpcClient = trpc.createClient({ links: [httpBatchLink({ url: "/api/trpc", transformer: superjson })] });

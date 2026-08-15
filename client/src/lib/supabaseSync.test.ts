@@ -100,10 +100,11 @@ describe("سجل حذف المقالات المتزامن", () => {
       sourceStatus: "cached" as const,
     };
 
-    expect(articleContentPayload(article)).toEqual({
+    expect(articleContentPayload({ ...article, contentVersion: 2 })).toEqual({
       url: "https://example.com/full",
       content: "<p>نص محلي يُنقل إلى الجهاز الثاني.</p>",
       contentUpdatedAt: 1_100,
+      contentVersion: 2,
     });
     expect(articleContentPayload({ ...article, content: "", sourceStatus: "link-only" })).toBeNull();
     expect(articleContentPayload({ ...article, content: "x".repeat(180_001) })).toBeNull();
