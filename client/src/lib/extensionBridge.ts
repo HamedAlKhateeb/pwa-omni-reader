@@ -78,7 +78,27 @@ export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSetti
 
 export function mergeExtensionBundle(local: ExportBundle, extension: ExportBundle): ExportBundle {
   const byUrl = new Map(local.articles.map((article) => [article.url, article]));
-  extension.articles.forEach((remote) => { const current = byUrl.get(remote.url); if (!current || remote.updatedAt > current.updatedAt || (!current.content && remote.content)) { const earliestSavedAt = current ? Math.min(savedAtOf(current), savedAtOf(remote)) : savedAtOf(remote); byUrl.set(remote.url, { ...remote, id: current?.id || remote.id, savedAt: earliestSavedAt }); } });
+  extension.articles.forEach((remote) => {
+    const current = byUrl.get(remote.url);
+    if (!current || remote.updatedAt > current.updatedAt || (!current.content && remote.content)) {
+      const earliestSavedAt = current ? Math.min(savedAtOf(current), savedAtOf(remote)) : savedAtOf(remote);
+      const remoteHasContent = Boolean(remote.content.trim());
+      byUrl.set(remote.url, {
+        ...remote,
+        id: current?.id || remote.id,
+        savedAt: earliestSavedAt,
+        title: remote.title && remote.title !== remote.url ? remote.title : current?.title || remote.title,
+        excerpt: remoteHasContent ? remote.excerpt : current?.excerpt || remote.excerpt,
+        content: remoteHasContent ? remote.content : current?.content || "",
+        image: remote.image || current?.image,
+        contentUpdatedAt: remoteHasContent ? remote.contentUpdatedAt : current?.contentUpdatedAt,
+        contentVersion: remoteHasContent ? remote.contentVersion : current?.contentVersion,
+        sourceStatus: remoteHasContent ? remote.sourceStatus : current?.sourceStatus || remote.sourceStatus,
+        tags: remote.tags.length ? remote.tags : current?.tags || [],
+        folderId: remote.folderId || current?.folderId,
+      });
+    }
+  });
   const folders = [...local.folders]; extension.folders.forEach((item) => { if (!folders.some((folder) => folder.id === item.id || folder.name === item.name)) folders.push(item); });
   const notes = [...local.notes]; extension.notes.forEach((item) => { if (!notes.some((note) => note.url === item.url && note.content === item.content && note.quote === item.quote)) notes.push(item); });
   const highlights = [...local.highlights]; extension.highlights.forEach((item) => { if (!highlights.some((highlight) => highlight.articleId === item.articleId && highlight.quote === item.quote)) highlights.push(item); });

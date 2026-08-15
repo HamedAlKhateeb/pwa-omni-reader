@@ -53,6 +53,13 @@ describe("Omni Reader sync compatibility", () => {
     expect(mergedWithCloud.articles[0]).toMatchObject({ title: "عنوان محدّث", savedAt: 1_700_000_000_000 });
   });
 
+  it("preserves local content and image when a newer remote snapshot omits them", () => {
+    const localArticle = { ...bundle.articles[0], image: "https://example.com/local-cover.jpg", excerpt: "ملخص محلي", updatedAt: 10_000, contentUpdatedAt: 10_000, contentVersion: 2, sourceStatus: "cached" as const };
+    const remoteArticle = { ...localArticle, id: "remote-copy", title: "https://example.com/a", content: "", excerpt: "", image: undefined, updatedAt: 20_000, contentUpdatedAt: undefined, contentVersion: undefined, sourceStatus: "link-only" as const, tags: [], folderId: undefined };
+    const merged = mergeExtensionBundle({ ...bundle, articles: [localArticle] }, { ...bundle, articles: [remoteArticle] });
+    expect(merged.articles[0]).toMatchObject({ content: localArticle.content, image: localArticle.image, excerpt: localArticle.excerpt, contentVersion: 2, sourceStatus: "cached" });
+  });
+
   it("normalizes encoded extension HTML before it enters the shared library", () => {
     const snapshot = {
       reader_bookmarks: {

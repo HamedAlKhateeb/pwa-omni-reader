@@ -1,6 +1,6 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { localStore, type ArticleDeletionLog, type ItemDeletionLog } from "./storage";
-import { cleanHtml, CONTENT_PIPELINE_VERSION, isBrokenArticleContent } from "./article";
+import { cleanHtml, CONTENT_PIPELINE_VERSION, isBrokenArticleContent, requiresContentRefresh } from "./article";
 import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
 import type { Article, ExportBundle, ReaderSettings } from "./types";
 
@@ -443,7 +443,9 @@ async function applyServerValues(values: SyncValues, fallbackSettings: ReaderSet
   const current = await localStore.exportAll();
   const remoteBundle = extensionSnapshotToBundle(values, fallbackSettings);
   const merged = mergeExtensionBundle(current, remoteBundle);
-  await localStore.importAll({ ...merged, settings: remoteBundle.settings });
+  const settingKeys = ["reader_theme", "reader_font_size", "reader_font", "reader_align", "reader_width", "reader_line_height", "reader_word_spacing", "reader_rtl", "reader_show_photos", "library_bg_color", "reader_auto_open_enabled", "reader_auto_open_sites", "reader_important_sites"] as const;
+  const hasRemoteSettings = settingKeys.some((key) => values[key] !== undefined);
+  await localStore.importAll({ ...merged, settings: hasRemoteSettings ? remoteBundle.settings : current.settings });
   await localStore.removeOrphanedAnnotations();
 }
 
@@ -484,7 +486,7 @@ export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtr
 async function hydrateMissingSyncedArticles() {
   if (typeof navigator !== "undefined" && !navigator.onLine) return { hydrated: 0, failed: 0 };
   const articles = await localStore.getArticles();
-  const missing = articles.filter((article) => !article.content.trim() || isBrokenArticleContent(article.content));
+  const missing = articles.filter((article) => !article.content.trim() || isBrokenArticleContent(article.content) || requiresContentRefresh(article));
   let hydrated = 0;
   let failed = 0;
 
