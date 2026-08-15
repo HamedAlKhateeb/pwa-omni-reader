@@ -9,6 +9,15 @@ describe("extractArticleFromHtml", () => {
     expect(article.content).toContain("فقرة اختبارية");
     expect(article.content).not.toContain("window.shouldNotRender");
     expect(article.content).not.toContain("<nav");
+    expect(article.image).toBe("https://example.test/cover.jpg");
     expect(article.readingTimeMinutes).toBeGreaterThan(0);
+  });
+
+  it("uses a social image or article image when Open Graph is unavailable", () => {
+    const articleText = "A readable article paragraph for testing image discovery. ".repeat(12);
+    const twitter = extractArticleFromHtml(`<!doctype html><head><meta name="twitter:image" content="/twitter-cover.webp"></head><body><article><h1>Twitter cover</h1><p>${articleText}</p></article></body>`, "https://example.test/story");
+    const contentImage = extractArticleFromHtml(`<!doctype html><body><article><h1>Content cover</h1><img src="/article-cover.webp" alt=""><p>${articleText}</p></article></body>`, "https://example.test/story");
+    expect(twitter.image).toBe("https://example.test/twitter-cover.webp");
+    expect(contentImage.image).toBe("https://example.test/article-cover.webp");
   });
 });

@@ -22,3 +22,21 @@
   -webkit-text-fill-color: #1f2926 !important;
   filter: grayscale(1) brightness(.43) !important;
 }
+
+/* Favor calm, readable Arabic UI typography over decorative display effects. */
+.workspace-heading h1,
+.empty-library h2,
+.article-card h2,
+.settings-card h2,
+.capture-dialog h2 {
+  font-family: "Noto Sans Arabic", system-ui, sans-serif !important;
+  font-weight: 800;
+  letter-spacing: 0 !important;
+  filter: none !important;
+}
+
+.workspace-heading h1::after,
+.workspace::before,
+.workspace::after {
+  display: none !important;
+}

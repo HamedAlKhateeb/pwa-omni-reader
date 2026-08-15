@@ -92,6 +92,30 @@ function fallbackContent(doc: Document) {
   return root.innerHTML;
 }
 
+function articleImage(doc: Document, baseUrl: string) {
+  const selectors = [
+    "meta[property='og:image']",
+    "meta[name='og:image']",
+    "meta[name='twitter:image']",
+    "meta[property='twitter:image']",
+    "meta[itemprop='image']",
+    "article img[src]",
+    "[role='main'] img[src]",
+    ".post-content img[src]",
+    ".entry-content img[src]",
+  ];
+  for (const selector of selectors) {
+    const node = doc.querySelector(selector) as HTMLMetaElement | HTMLImageElement | null;
+    const source = node?.getAttribute("content") || node?.getAttribute("data-src") || node?.getAttribute("data-original") || node?.getAttribute("src");
+    if (!source?.trim()) continue;
+    try {
+      const imageUrl = new URL(source.trim(), baseUrl);
+      if (imageUrl.protocol === "https:" || imageUrl.protocol === "http:") return imageUrl.href;
+    } catch { /* try the next candidate */ }
+  }
+  return undefined;
+}
+
 export function extractArticleFromHtml(html: string, sourceUrl: string): ExtractedArticle {
   const dom = new JSDOM(html, { url: sourceUrl });
   const doc = dom.window.document;
@@ -100,7 +124,7 @@ export function extractArticleFromHtml(html: string, sourceUrl: string): Extract
     if (deferred) image.setAttribute("src", deferred);
   });
   const h1 = doc.querySelector("h1")?.textContent?.trim();
-  const image = doc.querySelector("meta[property='og:image']")?.getAttribute("content") || undefined;
+  const image = articleImage(doc, sourceUrl);
   let parsed: ReturnType<Readability["parse"]> | null = null;
   try { parsed = new Readability(doc, { charThreshold: 20, classesToPreserve: ["caption", "figure", "figcaption", "pullquote", "highlight"], keepClasses: false }).parse(); } catch { parsed = null; }
   const rawContent = parsed?.content && parsed.content.length >= 300 ? parsed.content : fallbackContent(doc);
