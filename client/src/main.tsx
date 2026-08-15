@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { trpc } from "@/lib/trpc";
 import "./index.css";
 import "./masar-refinement.css";
+import "katex/dist/katex.min.css";
 import App from "./App";
 
 if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL }).catch(() => undefined));

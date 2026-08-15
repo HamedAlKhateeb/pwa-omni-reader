@@ -7,6 +7,7 @@ import { ArrowRight, Bookmark, Check, FileDown, FileText, Highlighter, ImageOff,
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
 import { highlightedHtml, makeId } from "@/lib/article";
 import { nextReaderControlsHidden } from "@/lib/readerControls";
+import { renderLatexInHtml } from "@/lib/latex";
 
 type Props = {
   article: Article; highlights: Highlight[]; notes: Note[]; settings: ReaderSettings;
@@ -27,7 +28,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const lastScrollTop = useRef(0);
   const readerHighlights = useMemo(() => highlights.filter((item) => item.articleId === article.id), [highlights, article.id]);
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
-  const html = useMemo(() => highlightedHtml(article.content, readerHighlights), [article.content, readerHighlights]);
+  const html = useMemo(() => renderLatexInHtml(highlightedHtml(article.content, readerHighlights)), [article.content, readerHighlights]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (noteOpen) setNoteOpen(false); else onClose(); } };

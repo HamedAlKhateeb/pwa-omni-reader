@@ -40,3 +40,12 @@
 .workspace::after {
   display: none !important;
 }
+
+/* The mobile drawer must fully cover the reading surface. */
+@media (max-width: 760px) {
+  .app-sidebar {
+    background: #f8f5ef !important;
+    opacity: 1;
+    box-shadow: -12px 0 30px rgba(31, 41, 38, .18) !important;
+  }
+}
