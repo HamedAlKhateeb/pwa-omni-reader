@@ -51,6 +51,11 @@ export async function pushBundleToExtension(bundle: ExportBundle) {
 
 function safeProgress(value: unknown) { return Math.max(0, Math.min(100, Number(value) || 0)); }
 
+export function normalizeReaderWidth(value: unknown, fallback: number) {
+  const width = Number(value);
+  return Number.isFinite(width) && width >= 520 && width <= 1220 ? width : fallback;
+}
+
 export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSettings: ReaderSettings): ExportBundle {
   const bookmarks = (data.reader_bookmarks && typeof data.reader_bookmarks === "object" ? data.reader_bookmarks : {}) as Record<string, Record<string, unknown>>;
   const now = Date.now();
@@ -72,7 +77,7 @@ export function extensionSnapshotToBundle(data: ExtensionSnapshot, fallbackSetti
   const textAlign: ReaderSettings["textAlign"] = data.reader_align === "left" || data.reader_align === "justify" || data.reader_align === "right" ? data.reader_align : fallbackSettings.textAlign;
   const autoOpenSites = Array.isArray(data.reader_auto_open_sites) ? data.reader_auto_open_sites.filter((item): item is string => typeof item === "string") : fallbackSettings.autoOpenSites;
   const importantSites = Array.isArray(data.reader_important_sites) ? data.reader_important_sites.filter((item): item is { domain: string; checked?: boolean } => Boolean(item && typeof item === "object" && typeof (item as { domain?: unknown }).domain === "string")).map((item) => ({ domain: item.domain, checked: item.checked !== false })) : fallbackSettings.importantSites;
-  const settings: ReaderSettings = { ...fallbackSettings, fontSize: Number(data.reader_font_size) || fallbackSettings.fontSize, lineHeight: Number(data.reader_line_height) || fallbackSettings.lineHeight, wordSpacing: Number(data.reader_word_spacing) || fallbackSettings.wordSpacing, width: Number(data.reader_width) || fallbackSettings.width, fontFamily: data.reader_font === "sans" || data.reader_font === "mono" ? data.reader_font : fallbackSettings.fontFamily, textAlign, theme: themeValues[Number(data.reader_theme)] || fallbackSettings.theme, isRtl: typeof data.reader_rtl === "boolean" ? data.reader_rtl : fallbackSettings.isRtl, showImages: typeof data.reader_show_photos === "boolean" ? data.reader_show_photos : fallbackSettings.showImages, libraryBackground, autoOpenEnabled: typeof data.reader_auto_open_enabled === "boolean" ? data.reader_auto_open_enabled : fallbackSettings.autoOpenEnabled, autoOpenSites, importantSites };
+  const settings: ReaderSettings = { ...fallbackSettings, fontSize: Number(data.reader_font_size) || fallbackSettings.fontSize, lineHeight: Number(data.reader_line_height) || fallbackSettings.lineHeight, wordSpacing: Number(data.reader_word_spacing) || fallbackSettings.wordSpacing, width: normalizeReaderWidth(data.reader_width, fallbackSettings.width), fontFamily: data.reader_font === "sans" || data.reader_font === "mono" ? data.reader_font : fallbackSettings.fontFamily, textAlign, theme: themeValues[Number(data.reader_theme)] || fallbackSettings.theme, isRtl: typeof data.reader_rtl === "boolean" ? data.reader_rtl : fallbackSettings.isRtl, showImages: typeof data.reader_show_photos === "boolean" ? data.reader_show_photos : fallbackSettings.showImages, libraryBackground, autoOpenEnabled: typeof data.reader_auto_open_enabled === "boolean" ? data.reader_auto_open_enabled : fallbackSettings.autoOpenEnabled, autoOpenSites, importantSites };
   return { version: 1, exportedAt: now, articles, folders, notes, highlights, settings };
 }
 

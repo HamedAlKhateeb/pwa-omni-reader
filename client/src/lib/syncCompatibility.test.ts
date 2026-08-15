@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
+import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle, normalizeReaderWidth } from "./extensionBridge";
 import { smartMerge } from "./supabaseSync";
 import { defaultReaderSettings, type ExportBundle } from "./types";
 
@@ -13,6 +13,14 @@ const bundle: ExportBundle = {
 };
 
 describe("Omni Reader sync compatibility", () => {
+  it("rejects extension width values that would collapse the web reader", () => {
+    expect(normalizeReaderWidth(20, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);
+    expect(normalizeReaderWidth(40, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);
+    expect(normalizeReaderWidth(520, defaultReaderSettings.width)).toBe(520);
+    expect(normalizeReaderWidth(1220, defaultReaderSettings.width)).toBe(1220);
+    expect(normalizeReaderWidth(2000, defaultReaderSettings.width)).toBe(defaultReaderSettings.width);
+  });
+
   it("round-trips every PWA reader preference through the extension keys", () => {
     const snapshot = bundleToExtensionSnapshot(bundle);
     expect(snapshot.reader_word_spacing).toBe(2);
