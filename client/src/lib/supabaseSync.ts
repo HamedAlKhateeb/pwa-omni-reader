@@ -1,6 +1,7 @@
 import { bundleToExtensionSnapshot, extensionSnapshotToBundle, mergeExtensionBundle } from "./extensionBridge";
 import { localStore, type ArticleDeletionLog } from "./storage";
-import type { ExportBundle, ReaderSettings } from "./types";
+import { extractWithRemoteServer, type RemoteExtractedArticle } from "./remoteExtractor";
+import type { Article, ExportBundle, ReaderSettings } from "./types";
 
 export const SYNC_KEYS = [
   "reader_bookmarks", "reader_folders", "reader_notes", "reader_highlights",
@@ -360,6 +361,45 @@ async function applyServerValues(values: SyncValues, fallbackSettings: ReaderSet
   await localStore.importAll({ ...merged, settings: remoteBundle.settings });
 }
 
+export function hydrateArticleFromRemote(article: Article, extracted: RemoteExtractedArticle, timestamp = Date.now()): Article {
+  return {
+    ...article,
+    title: article.title && article.title !== article.url ? article.title : extracted.title,
+    content: extracted.content,
+    excerpt: extracted.excerpt || article.excerpt,
+    image: article.image || extracted.image,
+    readingTimeMinutes: extracted.readingTimeMinutes || article.readingTimeMinutes,
+    updatedAt: Math.max(article.updatedAt || 0, timestamp),
+    sourceStatus: "cached",
+  };
+}
+
+async function hydrateMissingSyncedArticles() {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return { hydrated: 0, failed: 0 };
+  const articles = await localStore.getArticles();
+  const missing = articles.filter((article) => !article.content.trim());
+  let hydrated = 0;
+  let failed = 0;
+
+  // Keep the remote extractor responsive when a large extension library arrives.
+  // Each batch is awaited before the next begins, while up to three URLs can run together.
+  for (let offset = 0; offset < missing.length; offset += 3) {
+    const batch = missing.slice(offset, offset + 3);
+    const outcomes = await Promise.all(batch.map(async (article) => {
+      try {
+        const extracted = await extractWithRemoteServer(article.url);
+        await localStore.saveArticle(hydrateArticleFromRemote(article, extracted));
+        return true;
+      } catch {
+        return false;
+      }
+    }));
+    hydrated += outcomes.filter(Boolean).length;
+    failed += outcomes.filter((outcome) => !outcome).length;
+  }
+  return { hydrated, failed };
+}
+
 export async function fullSync(): Promise<SyncResult> {
   try {
     const session = getSession();
@@ -409,6 +449,7 @@ export async function fullSync(): Promise<SyncResult> {
     // can re-upload an old bookmark in the brief gap after the library changes.
     for (const item of [...pushQueue.filter((entry) => entry.key === "reader_deleted"), ...pushQueue.filter((entry) => entry.key !== "reader_deleted")]) await pushKey(item.key, item.value);
     if (Object.keys(applyFromServer).length) await applyServerValues(applyFromServer, bundle.settings);
+    await hydrateMissingSyncedArticles();
     ["reader_custom_rules", "reader_positions"].forEach((key) => {
       const typedKey = key as SyncKey;
       if (applyFromServer[typedKey] !== undefined) nextPassthrough[typedKey] = applyFromServer[typedKey];

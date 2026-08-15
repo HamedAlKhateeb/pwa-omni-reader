@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeArticleDeletionLogs, smartMerge } from "./supabaseSync";
+import { hydrateArticleFromRemote, mergeArticleDeletionLogs, smartMerge } from "./supabaseSync";
 
 describe("سجل حذف المقالات المتزامن", () => {
   it("يجمع سجلات الحذف ويحتفظ بأحدث وقت لكل رابط", () => {
@@ -34,6 +34,41 @@ describe("سجل حذف المقالات المتزامن", () => {
 
     expect(merged).toEqual({
       [url]: { title: "مقال جديد", ts: 3_000 },
+    });
+  });
+
+  it("يحوّل بطاقة مزامنة بلا محتوى إلى مقال مخزّن بعد الاستخراج", () => {
+    const article = hydrateArticleFromRemote({
+      id: "article_1",
+      url: "https://example.com/article",
+      title: "https://example.com/article",
+      content: "",
+      excerpt: "",
+      tags: [],
+      savedAt: 1_000,
+      updatedAt: 1_000,
+      progress: 0,
+      isRead: false,
+      isArchived: false,
+      isFavorite: false,
+      readingTimeMinutes: 0,
+      sourceStatus: "link-only",
+    }, {
+      url: "https://example.com/article",
+      title: "عنوان مستخرج",
+      content: "<p>محتوى صالح للقراءة</p>",
+      excerpt: "محتوى صالح",
+      image: "https://example.com/cover.jpg",
+      readingTimeMinutes: 4,
+    }, 2_000);
+
+    expect(article).toMatchObject({
+      title: "عنوان مستخرج",
+      content: "<p>محتوى صالح للقراءة</p>",
+      sourceStatus: "cached",
+      image: "https://example.com/cover.jpg",
+      readingTimeMinutes: 4,
+      updatedAt: 2_000,
     });
   });
 });

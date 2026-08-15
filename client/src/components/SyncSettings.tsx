@@ -59,7 +59,7 @@ export default function SyncSettings({ onSyncFinished }: Props) {
     setLastSyncAt(result.syncedAt || getLastSyncAt());
     setConflicts(result.conflicts);
     if (result.conflicts.length) { setMessage("تحتاج بعض الإعدادات إلى اختيار النسخة التي تريد الاحتفاظ بها."); return; }
-    setMessage("اكتملت المزامنة مع حسابك."); onSyncFinished();
+    setMessage("اكتملت المزامنة مع حسابك. استُعيد محتوى المقالات المتزامنة من روابطها عند توفره."); onSyncFinished();
   };
 
   useEffect(() => {
