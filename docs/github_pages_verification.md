@@ -1,21 +1,30 @@
 # تحقق GitHub Pages ومشاركة الرابط
 
-تم التحقق من الموقع المنشور على:
+تتوفر نسخة «مسار» المنشورة على: <https://hamedalkhateeb.github.io/pwa-omni-reader/>. تم التحقق من استخراج مقال خارجي وحفظه، ومن فتح نافذة الحفظ تلقائيًا من المسار التالي:
 
-`https://hamedalkhateeb.github.io/pwa-omni-reader/`
+```text
+/?share=1&share_url=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FReadability&share_title=Readability
+```
 
-تظهر واجهة «مسار» وتعمل شاشة المكتبة على GitHub Pages. كما تم اختبار المسار التالي:
+## الظهور في قائمة المشاركة على Android
 
-`/?share=1&share_url=https%3A%2F%2Fwww.rfc-editor.org%2Frfc%2Frfc2606.html&share_title=Shared%20Article`
+يظهر «مسار» في قائمة مشاركة Android فقط بعد تثبيت الموقع كتطبيق PWA من Chrome أو متصفح Chromium مدعوم. بعد النشر الجديد، افتح الموقع، ثم من قائمة المتصفح اختر **تثبيت التطبيق**. إن كان التطبيق مثبتًا قبل هذا الإصدار ولا يظهر ضمن قائمة المشاركة، أزله من الجهاز ثم ثبّته من جديد بعد تحديث الصفحة؛ يعيد ذلك قراءة `share_target` الجديد من manifest.
 
-فتح المسار نافذة حفظ المقال تلقائيًا مع تعبئة رابط المقال والعنوان. يعتمد هذا على `share_target` داخل manifest، ويظهر ضمن قائمة مشاركة النظام في المتصفحات والمنصات التي تدعم استقبال مشاركة PWAs المثبتة.
+> يتطلب Web Share Target أن يكون التطبيق مثبّتًا بالفعل، ولا يتوفر في كل المتصفحات أو على iPhone بالمستوى نفسه. [1]
 
-## التوافق
+تقرأ «مسار» بيانات المشاركة من `share_url` و`share_title` أو من `share_text`، ثم تعرض نافذة الحفظ. على iPhone أو المتصفحات التي لا تسجل PWA كهدف مشاركة، افتح «مسار» والصق الرابط يدويًا كبديل.
 
-تعمل المشاركة كوجهة للتطبيق بعد تثبيت الـPWA في Chrome على Android. يعتمد النظام على أن Android قد يضع الرابط في حقل `text` بدل `url`، ولذلك يفحص التطبيق الحقلين. دعم Web Share Target محدود خارج منصات Chromium؛ خصوصًا على iPhone لا ينبغي الاعتماد على ظهور «مسار» ضمن قائمة المشاركة، ويظل فتح الموقع ثم لصق الرابط البديل المتاح.
+## إعادة تعيين كلمة المرور
 
-المراجع: [Chrome for Developers](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target) و[MDN share_target](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/share_target).
+زر **«نسيت كلمة المرور»** يرسل رابطًا يعود إلى صفحة تغيير كلمة المرور داخل «مسار» عبر `?reset-password=1`. في لوحة Supabase أضف الرابط التالي إلى **Authentication → URL Configuration → Redirect URLs**؛ لا تحتاج إنشاء صفحة في مدونتك:
 
-## اختبار الربط العام
+```text
+https://hamedalkhateeb.github.io/pwa-omni-reader/?reset-password=1
+```
 
-نجح فتح نسخة GitHub Pages بمسار مشاركة وتعبئة الرابط والعنوان. عند تنفيذ «استخراج وحفظ» أظهر المتصفح `Failed to fetch`. السبب المتوقع هو أن نسخة الاستضافة المدمجة الحالية ما زالت تسبق commit الذي يضيف `/api/extract` مع CORS؛ يلزم حفظ ونشر النسخة المدمجة الجديدة ثم إعادة الاختبار من GitHub Pages.
+عند وصول رسالة Supabase وفتح الرابط، يعرض التطبيق حقلي كلمة المرور الجديدة وتأكيدها، ثم يرسل التغيير للحساب المؤقت المصادق عليه برابط الاستعادة. توصي Supabase بتوجيه رسالة الاستعادة إلى صفحة تغيير كلمة مرور مصرح بها ثم تحديث كلمة مرور المستخدم من تلك الصفحة.[2]
+
+## المراجع
+
+[1]: https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/share_target "MDN: share_target"
+[2]: https://supabase.com/docs/guides/auth/passwords "Supabase: Password-based Auth"

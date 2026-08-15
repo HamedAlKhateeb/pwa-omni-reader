@@ -144,11 +144,47 @@ export async function signUp(email: string, password: string) {
 }
 
 export async function recoverPassword(email: string) {
+  const redirectTo = buildPasswordRecoveryRedirectUrl(window.location.origin, import.meta.env.BASE_URL);
   const { response, body } = await request("/auth/v1/recover", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, redirect_to: redirectTo }),
   });
   if (!response.ok) throw new Error(readAuthError(body, "تعذّر إرسال رسالة استعادة كلمة المرور."));
+}
+
+export function buildPasswordRecoveryRedirectUrl(origin: string, basePath: string) {
+  const target = new URL(basePath, origin);
+  target.searchParams.set("reset-password", "1");
+  return target.toString();
+}
+
+function recoverySessionFromHash(hash: string): SyncSession | null {
+  const values = new URLSearchParams(hash.replace(/^#/, ""));
+  if (values.get("type") !== "recovery") return null;
+  const accessToken = values.get("access_token") || "";
+  const refreshToken = values.get("refresh_token") || "";
+  if (!accessToken || !refreshToken) return null;
+  try {
+    const encodedPayload = accessToken.split(".")[1];
+    const payload = JSON.parse(atob(encodedPayload.replace(/-/g, "+").replace(/_/g, "/"))) as { sub?: unknown; email?: unknown; exp?: unknown };
+    if (typeof payload.sub !== "string") return null;
+    return { accessToken, refreshToken, userId: payload.sub, email: typeof payload.email === "string" ? payload.email : "", expiresAt: typeof payload.exp === "number" ? payload.exp * 1000 : undefined };
+  } catch {
+    return null;
+  }
+}
+
+export function completePasswordRecoveryFromUrl() {
+  const session = recoverySessionFromHash(window.location.hash);
+  if (!session) return null;
+  setSession(session);
+  history.replaceState({}, document.title, new URL(import.meta.env.BASE_URL, window.location.origin).toString());
+  return session;
+}
+
+export async function updatePassword(password: string) {
+  const { response, body } = await authorizedRequest("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password }) });
+  if (!response.ok) throw new Error(readAuthError(body, "تعذّر تغيير كلمة المرور."));
 }
 
 export async function refreshToken() {
