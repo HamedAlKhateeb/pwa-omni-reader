@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { cleanHtml, CONTENT_PIPELINE_VERSION, createArticle, extractArticleFromHtml, isBrokenArticleContent, newestSavedFirst, repairStoredArticleContent, requiresContentRefresh, sortArticlesBySavedAt, toEpochMillis } from "./article";
+import { cleanHtml, CONTENT_PIPELINE_VERSION, createArticle, extractArticleFromHtml, highlightedHtml, isBrokenArticleContent, newestSavedFirst, repairStoredArticleContent, requiresContentRefresh, sortArticlesBySavedAt, toEpochMillis } from "./article";
 
 describe("extractArticleFromHtml", () => {
   it("uses Mozilla Readability to isolate article text and remove active markup", () => {
@@ -56,6 +56,12 @@ describe("extractArticleFromHtml", () => {
     const broken = repairStoredArticleContent({ ...encoded, content: "<p>{{vm.title}}</p>", excerpt: "قالب" });
     expect(broken).toMatchObject({ changed: true, requiresExtraction: true });
     expect(broken.article).toMatchObject({ content: "", sourceStatus: "link-only" });
+  });
+
+  it("wraps a highlight that crosses inline HTML nodes", () => {
+    const html = highlightedHtml("<p>We can <strong>greatly simplify</strong> by passing.</p>", [{ id: "h1", articleId: "a1", quote: "We can greatly simplify by passing", createdAt: Date.now() }]);
+    expect(html).toContain('class="reader-highlight"');
+    expect(html).toContain("greatly simplify");
   });
 
   it("marks visible image-transform URL fragments as broken content for re-extraction", () => {

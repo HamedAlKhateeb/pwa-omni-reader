@@ -98,4 +98,34 @@ export function createArticle(url: string, title?: string, content = ""): Articl
 function resolveLazyImages(doc: Document) { doc.querySelectorAll("img").forEach((image) => { const preferred = image.getAttribute("data-src") || image.getAttribute("data-original") || image.getAttribute("data-lazy-src"); if (preferred) image.setAttribute("src", preferred); const srcset = image.getAttribute("data-srcset") || image.getAttribute("srcset"); if (srcset) { const best = srcset.split(",").map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean).pop(); if (best) image.setAttribute("src", best); } }); }
 function fallbackContent(doc: Document) { const root = doc.querySelector("article, [role='main'], .post-content, .entry-content, .content, .article-content, .story-body, .post-body, #main-content, .main-content") ?? Array.from(doc.querySelectorAll("p,div,section")).filter((item) => item.textContent?.trim().length && !item.closest("nav,header,footer,aside,.sidebar,.comments,.ads")).sort((a, b) => (b.textContent?.length || 0) - (a.textContent?.length || 0))[0] ?? doc.body; return root.innerHTML; }
 export function extractArticleFromHtml(html: string, url: string) { const doc = new DOMParser().parseFromString(html, "text/html"); resolveLazyImages(doc); const clone = doc.cloneNode(true) as Document; let parsed: ReturnType<Readability["parse"]> | null = null; try { parsed = new Readability(clone, { charThreshold: 20, classesToPreserve: ["caption", "figure", "figcaption", "pullquote", "highlight"], keepClasses: false }).parse(); } catch { parsed = null; } const content = parsed?.content && parsed.content.length >= 300 ? parsed.content : fallbackContent(doc); const title = doc.querySelector("h1")?.textContent?.trim() || parsed?.title || doc.title || new URL(url).hostname; const article = createArticle(url, title, content); article.image = doc.querySelector("meta[property='og:image']")?.getAttribute("content") || undefined; article.excerpt = parsed?.excerpt?.trim() || article.excerpt; return article; }
-export function highlightedHtml(html: string, highlights: Highlight[], baseUrl?: string) { const doc = new DOMParser().parseFromString(cleanHtml(html, baseUrl), "text/html"); highlights.forEach((highlight) => { if (!highlight.quote.trim()) return; const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT); let node: Text | null = null; while ((node = walker.nextNode() as Text | null)) { const index = node.data.indexOf(highlight.quote); if (index < 0 || node.parentElement?.closest("mark")) continue; const range = doc.createRange(); range.setStart(node, index); range.setEnd(node, index + highlight.quote.length); const mark = doc.createElement("mark"); mark.className = "reader-highlight"; mark.dataset.highlightId = highlight.id; try { range.surroundContents(mark); } catch { /* selection crosses a DOM boundary */ } break; } }); return doc.body.innerHTML; }
+export function highlightedHtml(html: string, highlights: Highlight[], baseUrl?: string) {
+  const doc = new DOMParser().parseFromString(cleanHtml(html, baseUrl), "text/html");
+  highlights.forEach((highlight) => {
+    const quote = highlight.quote.trim();
+    if (!quote) return;
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    let node: Text | null = null;
+    while ((node = walker.nextNode() as Text | null)) nodes.push(node);
+    const allText = nodes.map((item) => item.data).join("");
+    const start = allText.indexOf(quote);
+    if (start < 0) return;
+    let cursor = 0;
+    let first: Text | null = null;
+    let last: Text | null = null;
+    let firstOffset = 0;
+    let lastOffset = 0;
+    for (const textNode of nodes) {
+      const end = cursor + textNode.data.length;
+      if (!first && start >= cursor && start < end) { first = textNode; firstOffset = start - cursor; }
+      const quoteEnd = start + quote.length;
+      if (quoteEnd > cursor && quoteEnd <= end) { last = textNode; lastOffset = quoteEnd - cursor; break; }
+      cursor = end;
+    }
+    if (!first || !last || first.parentElement?.closest("mark") || last.parentElement?.closest("mark")) return;
+    const range = doc.createRange(); range.setStart(first, firstOffset); range.setEnd(last, lastOffset);
+    const mark = doc.createElement("mark"); mark.className = "reader-highlight"; mark.dataset.highlightId = highlight.id;
+    try { range.surroundContents(mark); } catch { /* selection crosses an unsupported DOM boundary */ }
+  });
+  return doc.body.innerHTML;
+}

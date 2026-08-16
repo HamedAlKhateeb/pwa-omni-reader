@@ -3,7 +3,7 @@
  * Controls are compact and direct; typography changes save to local storage.
  */
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Bookmark, Check, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
+import { ArrowRight, Bookmark, Check, ExternalLink, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
 import { cleanHtml, highlightedHtml, isBrokenArticleContent, makeId } from "@/lib/article";
 import { nextReaderControlsHidden } from "@/lib/readerControls";
@@ -129,7 +129,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     </aside>
     <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection} onTouchEnd={() => requestAnimationFrame(captureSelection)}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
-        <div className="reader-source"><Bookmark size={14} /> {new URL(article.url).hostname.replace(/^www\./, "")} <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"}</div>
+        <div className="reader-source"><Bookmark size={14} /> <span>{new URL(article.url).hostname.replace(/^www\./, "")}</span> <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"} <a className="reader-source-link" href={article.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> فتح المصدر الأصلي</a></div>
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
         {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: html }} />}
