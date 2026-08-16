@@ -83,6 +83,23 @@ describe("extractArticleFromHtml", () => {
     vi.unstubAllGlobals();
   });
 
+  it("accepts the public WordPress.com IPv4 range used by YouDo", async () => {
+    const story = "This is readable content from the public WordPress.com address used by YouDo. ".repeat(8);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`<html><body><article><h1>YouDo article</h1><p>${story}</p></article></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractArticleFromUrl("http://192.0.78.215/story")).resolves.toMatchObject({ title: "YouDo article" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("still rejects the reserved 192.0.0.0/24 range", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractArticleFromUrl("http://192.0.0.8/reserved")).rejects.toThrow("داخلية");
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("accepts a public IPv4-mapped IPv6 address", async () => {
     const story = "This is readable content from a public IPv4-mapped address. ".repeat(8);
     const fetchMock = vi.fn().mockResolvedValue(new Response(`<html><body><article><h1>Mapped public host</h1><p>${story}</p></article></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
