@@ -32,6 +32,15 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, readerHighlights, article.url)), [normalizedContent, article.url, readerHighlights]);
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
   useEffect(() => { if (normalizedContent && normalizedContent !== article.content && !isBrokenArticleContent(normalizedContent)) onUpdateArticle({ content: normalizedContent }); }, [article.content, normalizedContent, onUpdateArticle]);
+  useEffect(() => {
+    const node = shellRef.current;
+    if (!node || !article.progress) return;
+    const frame = requestAnimationFrame(() => {
+      const maximum = node.scrollHeight - node.clientHeight;
+      if (maximum > 0) { node.scrollTop = maximum * Math.min(100, Math.max(0, article.progress)) / 100; lastScrollTop.current = node.scrollTop; }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [article.id, article.progress, normalizedContent]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (noteOpen) setNoteOpen(false); else onClose(); } };
