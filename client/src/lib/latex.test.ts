@@ -9,4 +9,14 @@ describe("عرض LaTeX", () => {
   it("يعرض المعادلة المنفصلة", () => {
     expect(renderLatexInHtml("$$\\frac{a}{b}$$")).toContain("katex-display");
   });
+
+  it("يعرض صيغة \\( ... \\) داخل HTML", () => {
+    const html = renderLatexInHtml("<p>القيمة \\(x^2\\) هنا</p>");
+    expect(html).toContain("katex");
+    expect(html).not.toContain("\\\\(");
+  });
+
+  it("يعرض صيغة \\[ ... \\] كمعادلة منفصلة", () => {
+    expect(renderLatexInHtml("\\[\\frac{a}{b}\\]")).toContain("katex-display");
+  });
 });

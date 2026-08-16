@@ -2,7 +2,7 @@
  * Design reminder — «مرسم التصفّح»: reader view is a calm paper surface.
  * Controls are compact and direct; typography changes save to local storage.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bookmark, Check, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
 import { cleanHtml, highlightedHtml, isBrokenArticleContent, makeId } from "@/lib/article";
@@ -20,6 +20,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const shellRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selection, setSelection] = useState("");
+  const [selectionAnchor, setSelectionAnchor] = useState<{ top: number; left: number } | null>(null);
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -63,20 +64,37 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     saveProgress();
   };
   const readSelection = () => window.getSelection()?.toString().trim() || "";
+  const captureSelection = () => {
+    const current = readSelection();
+    setSelection(current);
+    if (!current) { setSelectionAnchor(null); return; }
+    const browserSelection = window.getSelection();
+    const rect = browserSelection?.rangeCount ? browserSelection.getRangeAt(0).getBoundingClientRect() : null;
+    if (!rect || (!rect.width && !rect.height)) return;
+    const toolbarTop = rect.top > 64 ? rect.top - 54 : rect.bottom + 8;
+    setSelectionAnchor({ top: Math.max(8, toolbarTop), left: Math.min(window.innerWidth - 120, Math.max(120, rect.left + rect.width / 2)) });
+  };
+  const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
+    const id = mark?.getAttribute("data-highlight-id");
+    if (!id) return;
+    event.preventDefault(); event.stopPropagation();
+    onRemoveHighlight(id); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
+  };
   const toggleHighlight = () => {
     const quote = selection || readSelection();
     if (!quote) return;
     const existing = readerHighlights.find((item) => item.quote === quote);
     if (existing) onRemoveHighlight(existing.id);
     else onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote, createdAt: Date.now() });
-    window.getSelection()?.removeAllRanges(); setSelection("");
+    window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null);
   };
   const openNote = () => { const quote = selection || readSelection(); if (!quote) return; setNoteText(""); setNoteOpen(true); };
   const saveNote = () => {
     const quote = selection || readSelection();
     if (!noteText.trim()) return;
     onAddNote({ id: makeId("note"), articleId: article.id, url: article.url, quote, content: noteText.trim(), isRtl: settings.isRtl, createdAt: Date.now(), updatedAt: Date.now() });
-    setNoteOpen(false); setSelection(""); window.getSelection()?.removeAllRanges();
+    setNoteOpen(false); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
   };
   const toggleSpeech = () => {
     if (speaking) { speechSynthesis.cancel(); setSpeaking(false); return; }
@@ -109,13 +127,13 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
-    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={() => setSelection(readSelection())} onTouchEnd={() => requestAnimationFrame(() => setSelection(readSelection()))}>
+    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection} onTouchEnd={() => requestAnimationFrame(captureSelection)}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
         <div className="reader-source"><Bookmark size={14} /> {new URL(article.url).hostname.replace(/^www\./, "")} <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"}</div>
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
-        {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} dangerouslySetInnerHTML={{ __html: html }} />}
-        {selection && <div className="selection-strip"><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); }}><X size={14} /></button></div>}
+        {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: html }} />}
+        {selection && <div className="selection-strip" style={selectionAnchor ? { top: `${selectionAnchor.top}px`, left: `${selectionAnchor.left}px` } : undefined}><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null); }}><X size={14} /></button></div>}
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
