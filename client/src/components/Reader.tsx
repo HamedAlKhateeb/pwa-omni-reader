@@ -28,6 +28,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const [speaking, setSpeaking] = useState(false);
   const [speechError, setSpeechError] = useState("");
   const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const speechErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechRunRef = useRef(0);
   const speechIndexRef = useRef(0);
   const [fullscreen, setFullscreen] = useState(false);
@@ -60,7 +61,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     const loadVoices = () => setSpeechVoices(window.speechSynthesis?.getVoices() || []);
     loadVoices();
     window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
-    return () => { speechRunRef.current += 1; window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices); window.speechSynthesis?.cancel(); };
+    return () => { speechRunRef.current += 1; window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices); window.speechSynthesis?.cancel(); if (speechErrorTimerRef.current) clearTimeout(speechErrorTimerRef.current); };
   }, []);
 
   const saveProgress = () => {
@@ -116,18 +117,27 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     onAddNote({ id: makeId("note"), articleId: article.id, url: article.url, quote, content: noteText.trim(), isRtl: settings.isRtl, createdAt: Date.now(), updatedAt: Date.now() });
     setNoteOpen(false); setSelection(""); setSelectionMode(null); window.getSelection()?.removeAllRanges();
   };
+  const showSpeechError = (message: string) => {
+    if (speechErrorTimerRef.current) clearTimeout(speechErrorTimerRef.current);
+    setSpeechError(message);
+    speechErrorTimerRef.current = setTimeout(() => { setSpeechError(""); speechErrorTimerRef.current = null; }, 2000);
+  };
   const toggleSpeech = () => {
-    const synthesis = window.speechSynthesis;
-    if (!synthesis || speaking || synthesis.speaking || synthesis.pending) { speechRunRef.current += 1; speechIndexRef.current = 0; synthesis?.cancel(); setSpeaking(false); return; }
+    const synthesis = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synthesis) { showSpeechError("هذا المتصفح لا يدعم النطق الصوتي."); return; }
+    if (speaking || synthesis.speaking || synthesis.pending) { speechRunRef.current += 1; speechIndexRef.current = 0; synthesis.cancel(); setSpeaking(false); return; }
     setSpeechError("");
+    if (speechErrorTimerRef.current) { clearTimeout(speechErrorTimerRef.current); speechErrorTimerRef.current = null; }
     if (!speechText) return;
     const chunks = speechText.match(/[^.!?؟؛\n]+[.!?؟؛]?/g)?.flatMap((chunk) => chunk.trim().length > 220 ? (chunk.trim().match(/.{1,220}(?:\s|$)/g) || [chunk.trim()]) : [chunk.trim()]).filter(Boolean) || [speechText];
     const run = speechRunRef.current + 1;
     speechRunRef.current = run;
     speechIndexRef.current = 0;
-    const availableVoices = speechVoices.length ? speechVoices : synthesis.getVoices();
+    const currentVoices = synthesis.getVoices();
+    if (currentVoices.length) setSpeechVoices(currentVoices);
+    const availableVoices = currentVoices.length ? currentVoices : speechVoices;
     const voice = speechLanguage.startsWith("ar") ? availableVoices.find((item) => /^ar(?:-|$)/i.test(item.lang)) : availableVoices.find((item) => /^en(?:-|$)/i.test(item.lang));
-    if (speechLanguage.startsWith("ar") && !voice) { setSpeechError("لا يوجد صوت عربي مفعّل على هذا الجهاز. فعّل صوتًا عربيًا من إعدادات تحويل النص إلى كلام ثم أعد المحاولة."); return; }
+    if (speechLanguage.startsWith("ar") && !voice) { showSpeechError("لا يوجد صوت عربي مفعّل على هذا الجهاز. فعّل صوتًا عربيًا من إعدادات تحويل النص إلى كلام ثم أعد المحاولة."); return; }
     const speakNext = () => {
       if (speechRunRef.current !== run) return;
       const text = chunks[speechIndexRef.current++];
@@ -137,7 +147,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       else utterance.lang = speechLanguage;
       utterance.rate = settings.isRtl ? 0.94 : 1;
       utterance.onend = speakNext;
-      utterance.onerror = (event) => { if (event.error !== "canceled" && event.error !== "interrupted") { setSpeaking(false); setSpeechError(`تعذر تشغيل الصوت ${speechLanguage.startsWith("ar") ? "العربي" : "المحدد"}. تأكد من تفعيل محرك تحويل النص إلى كلام في الجهاز.`); } };
+      utterance.onerror = (event) => { if (event.error !== "canceled" && event.error !== "interrupted") { setSpeaking(false); showSpeechError(`تعذر تشغيل الصوت ${speechLanguage.startsWith("ar") ? "العربي" : "المحدد"}. تأكد من تفعيل محرك تحويل النص إلى كلام في الجهاز.`); } };
       synthesis.resume();
       synthesis.speak(utterance);
     };
