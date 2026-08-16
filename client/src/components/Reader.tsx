@@ -3,12 +3,13 @@
  * Controls are compact and direct; typography changes save to local storage.
  */
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { ArrowRight, Bookmark, Check, ExternalLink, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
 import { cleanHtml, highlightedHtml, isBrokenArticleContent, makeId } from "@/lib/article";
 import { nextReaderControlsHidden } from "@/lib/readerControls";
 import { renderLatexInHtml } from "@/lib/latex";
+
+type SelectionMode = "highlight" | "note" | null;
 
 type Props = {
   article: Article; highlights: Highlight[]; notes: Note[]; settings: ReaderSettings;
@@ -21,7 +22,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const shellRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selection, setSelection] = useState("");
-  const [selectionAnchor, setSelectionAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>(null);
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -35,11 +36,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const readerHighlights = useMemo(() => highlights.filter((item) => item.articleId === article.id), [highlights, article.id]);
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
   const normalizedContent = useMemo(() => cleanHtml(article.content, article.url), [article.content, article.url]);
-  const displayHighlights = useMemo(() => {
-    if (!selection || readerHighlights.some((item) => item.quote === selection)) return readerHighlights;
-    return [...readerHighlights, { id: "selection-preview", articleId: article.id, quote: selection, createdAt: 0 }];
-  }, [article.id, readerHighlights, selection]);
-  const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, displayHighlights, article.url)), [normalizedContent, article.url, displayHighlights]);
+  const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, readerHighlights, article.url)), [normalizedContent, article.url, readerHighlights]);
   const speechText = useMemo(() => new DOMParser().parseFromString(article.content || "", "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "", [article.content]);
   const speechLanguage = /[\u0600-\u06ff]/.test(speechText) || settings.isRtl ? "ar-SA" : "en-US";
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
@@ -82,35 +79,42 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const readSelection = () => window.getSelection()?.toString().trim() || "";
   const captureSelection = () => {
     const current = readSelection();
+    if (!current || !selectionMode) return;
     setSelection(current);
-    if (!current) { setSelectionAnchor(null); return; }
-    const browserSelection = window.getSelection();
-    const rect = browserSelection?.rangeCount ? browserSelection.getRangeAt(0).getBoundingClientRect() : null;
-    if (!rect || (!rect.width && !rect.height)) return;
-    const toolbarTop = rect.top > 64 ? rect.top - 54 : rect.bottom + 8;
-    setSelectionAnchor({ top: Math.max(8, toolbarTop), left: Math.min(window.innerWidth - 120, Math.max(120, rect.left + rect.width / 2)) });
+    if (selectionMode === "highlight") {
+      if (!readerHighlights.some((item) => item.quote === current)) onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote: current, createdAt: Date.now() });
+      setSelection("");
+      setSelectionMode(null);
+      window.getSelection()?.removeAllRanges();
+      return;
+    }
+    setNoteText("");
+    setNoteOpen(true);
+    setSelectionMode(null);
+    window.getSelection()?.removeAllRanges();
   };
   const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
     const id = mark?.getAttribute("data-highlight-id");
-    if (!id || id === "selection-preview") return;
+    if (!id) return;
     event.preventDefault(); event.stopPropagation();
-    onRemoveHighlight(id); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
+    onRemoveHighlight(id); setSelection(""); setSelectionMode(null); window.getSelection()?.removeAllRanges();
   };
-  const toggleHighlight = () => {
-    const quote = selection || readSelection();
-    if (!quote) return;
-    const existing = readerHighlights.find((item) => item.quote === quote);
-    if (existing) onRemoveHighlight(existing.id);
-    else onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote, createdAt: Date.now() });
-    window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null);
+  const toggleHighlightMode = () => {
+    setSelection("");
+    setSelectionMode((mode) => mode === "highlight" ? null : "highlight");
+    window.getSelection()?.removeAllRanges();
   };
-  const openNote = () => { const quote = selection || readSelection(); if (!quote) return; setNoteText(""); setNoteOpen(true); };
+  const toggleNoteMode = () => {
+    setSelection("");
+    setSelectionMode((mode) => mode === "note" ? null : "note");
+    window.getSelection()?.removeAllRanges();
+  };
   const saveNote = () => {
     const quote = selection || readSelection();
     if (!noteText.trim()) return;
     onAddNote({ id: makeId("note"), articleId: article.id, url: article.url, quote, content: noteText.trim(), isRtl: settings.isRtl, createdAt: Date.now(), updatedAt: Date.now() });
-    setNoteOpen(false); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
+    setNoteOpen(false); setSelection(""); setSelectionMode(null); window.getSelection()?.removeAllRanges();
   };
   const toggleSpeech = () => {
     const synthesis = window.speechSynthesis;
@@ -158,8 +162,8 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     <aside className={`reader-rail ${controlsHidden ? "reader-controls-hidden" : ""}`} aria-label="أدوات القارئ">
       <button className="rail-button" onClick={onClose} title="العودة للمكتبة"><ArrowRight size={19} /></button><span className="rail-line" />
       <button className={showSettings ? "rail-button active" : "rail-button"} onClick={() => setShowSettings((value) => !value)} title="إعدادات القراءة"><Settings2 size={19} /></button>
-      <button className="rail-button" onClick={toggleHighlight} title="تمييز أو إلغاء تمييز النص المحدد"><Highlighter size={19} /></button>
-      <button className="rail-button" onClick={openNote} title="إضافة ملاحظة إلى النص المحدد"><Quote size={19} /></button>
+      <button className={selectionMode === "highlight" ? "rail-button active" : "rail-button"} onClick={toggleHighlightMode} title={selectionMode === "highlight" ? "إلغاء وضع التمييز" : "ابدأ تحديد نص للتمييز"} aria-pressed={selectionMode === "highlight"}><Highlighter size={19} /></button>
+      <button className={selectionMode === "note" ? "rail-button active" : "rail-button"} onClick={toggleNoteMode} title={selectionMode === "note" ? "إلغاء وضع الملاحظة" : "ابدأ تحديد نص للتعليق"} aria-pressed={selectionMode === "note"}><Quote size={19} /></button>
       <button className={speaking ? "rail-button speech-toggle active" : "rail-button speech-toggle"} onClick={toggleSpeech} title={speaking ? "إيقاف الاستماع" : "استمع للنص"} aria-pressed={speaking}><Volume2 size={19} /></button>
       <button className={!settings.showImages ? "rail-button image-toggle active" : "rail-button image-toggle"} onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title={settings.showImages ? "إخفاء الصور" : "إظهار الصور"} aria-pressed={!settings.showImages}><ImageOff size={19} /></button>
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
@@ -171,7 +175,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
         {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: html }} />}
-        {selection && typeof document !== "undefined" ? createPortal(<div className="selection-strip" style={selectionAnchor ? { top: `${selectionAnchor.top}px`, left: `${selectionAnchor.left}px` } : undefined}><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null); }}><X size={14} /></button></div>, document.body) : null}
+
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
