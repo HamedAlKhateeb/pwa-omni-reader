@@ -24,6 +24,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState("");
   const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
   const speechRunRef = useRef(0);
   const speechIndexRef = useRef(0);
@@ -35,6 +36,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const normalizedContent = useMemo(() => cleanHtml(article.content, article.url), [article.content, article.url]);
   const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, readerHighlights, article.url)), [normalizedContent, article.url, readerHighlights]);
   const speechText = useMemo(() => new DOMParser().parseFromString(article.content || "", "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "", [article.content]);
+  const speechLanguage = /[\u0600-\u06ff]/.test(speechText) || settings.isRtl ? "ar-SA" : "en-US";
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
   useEffect(() => { if (normalizedContent && normalizedContent !== article.content && !isBrokenArticleContent(normalizedContent)) onUpdateArticle({ content: normalizedContent }); }, [article.content, normalizedContent, onUpdateArticle]);
   useEffect(() => {
@@ -108,22 +110,25 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const toggleSpeech = () => {
     const synthesis = window.speechSynthesis;
     if (!synthesis || speaking || synthesis.speaking || synthesis.pending) { speechRunRef.current += 1; speechIndexRef.current = 0; synthesis?.cancel(); setSpeaking(false); return; }
+    setSpeechError("");
     if (!speechText) return;
     const chunks = speechText.match(/[^.!?؟؛\n]+[.!?؟؛]?/g)?.flatMap((chunk) => chunk.trim().length > 220 ? (chunk.trim().match(/.{1,220}(?:\s|$)/g) || [chunk.trim()]) : [chunk.trim()]).filter(Boolean) || [speechText];
     const run = speechRunRef.current + 1;
     speechRunRef.current = run;
     speechIndexRef.current = 0;
-    const voice = speechVoices.find((item) => /^ar(?:-|$)/i.test(item.lang)) || (settings.isRtl ? speechVoices.find((item) => item.lang.toLowerCase().startsWith("ar")) : undefined);
+    const availableVoices = speechVoices.length ? speechVoices : synthesis.getVoices();
+    const voice = speechLanguage.startsWith("ar") ? availableVoices.find((item) => /^ar(?:-|$)/i.test(item.lang)) : availableVoices.find((item) => /^en(?:-|$)/i.test(item.lang));
+    if (speechLanguage.startsWith("ar") && !voice) { setSpeechError("لا يوجد صوت عربي مفعّل على هذا الجهاز. فعّل صوتًا عربيًا من إعدادات تحويل النص إلى كلام ثم أعد المحاولة."); return; }
     const speakNext = () => {
       if (speechRunRef.current !== run) return;
       const text = chunks[speechIndexRef.current++];
       if (!text) { setSpeaking(false); return; }
       const utterance = new SpeechSynthesisUtterance(text);
       if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
-      else utterance.lang = settings.isRtl ? "ar-SA" : "en-US";
+      else utterance.lang = speechLanguage;
       utterance.rate = settings.isRtl ? 0.94 : 1;
       utterance.onend = speakNext;
-      utterance.onerror = (event) => { if (event.error !== "canceled" && event.error !== "interrupted") setSpeaking(false); };
+      utterance.onerror = (event) => { if (event.error !== "canceled" && event.error !== "interrupted") { setSpeaking(false); setSpeechError(`تعذر تشغيل الصوت ${speechLanguage.startsWith("ar") ? "العربي" : "المحدد"}. تأكد من تفعيل محرك تحويل النص إلى كلام في الجهاز.`); } };
       synthesis.resume();
       synthesis.speak(utterance);
     };
@@ -165,6 +170,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
+    {speechError && <div className="speech-error" role="status">{speechError}</div>}
     {showSettings && <div className="reader-settings-panel"><button className="panel-close" onClick={() => setShowSettings(false)}><X size={17} /></button><div className="panel-heading"><Sparkles size={16} /> ضبط القراءة</div><label>حجم الخط <input type="range" min="14" max="32" value={settings.fontSize} onChange={(event) => onSaveSettings({ ...settings, fontSize: Number(event.target.value) })} /><b>{settings.fontSize}</b></label><label>تباعد السطور <input type="range" min="1.3" max="2.5" step="0.1" value={settings.lineHeight} onChange={(event) => onSaveSettings({ ...settings, lineHeight: Number(event.target.value) })} /><b>{settings.lineHeight.toFixed(1)}</b></label><label>تباعد الكلمات <input type="range" min="-1" max="8" step="0.5" value={settings.wordSpacing} onChange={(event) => onSaveSettings({ ...settings, wordSpacing: Number(event.target.value) })} /><b>{settings.wordSpacing}</b></label><label>عرض النص <input type="range" min="520" max="1220" step="20" value={settings.width} onChange={(event) => onSaveSettings({ ...settings, width: Number(event.target.value), widthCustomized: true })} /></label><div className="choice-row">{(["serif", "sans", "mono"] as const).map((font) => <button key={font} className={settings.fontFamily === font ? "choice active" : "choice"} onClick={() => onSaveSettings({ ...settings, fontFamily: font })}>{font === "serif" ? "تقليدي" : font === "sans" ? "واضح" : "ثابت"}</button>)}</div><div className="choice-row">{(["right", "justify", "left"] as const).map((align) => <button key={align} className={settings.textAlign === align ? "choice active" : "choice"} onClick={() => onSaveSettings({ ...settings, textAlign: align })}>{align === "right" ? "يمين" : align === "justify" ? "ضبط" : "يسار"}</button>)}</div><div className="choice-row">{(["light", "cream", "sepia", "dark"] as const).map((theme) => <button key={theme} aria-label={theme} className={`theme-dot ${theme} ${settings.theme === theme ? "active" : ""}`} onClick={() => onSaveSettings({ ...settings, theme })} />)}</div><button className={settings.isRtl ? "direction-button active" : "direction-button"} onClick={toggleDirection}>اتجاه القراءة: {settings.isRtl ? "من اليمين" : "من اليسار"}</button></div>}
     {noteOpen && <div className="modal-layer"><div className="note-dialog"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)}><X size={18} /></button><div className="dialog-kicker"><Quote size={15} /> ملاحظة مرتبطة بالنص</div><blockquote>{selection || readSelection()}</blockquote><textarea value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="اكتب الفكرة أو السؤال الذي تريد الرجوع إليه…" rows={5} autoFocus /><button className="ink-button" onClick={saveNote}><Check size={16} /> حفظ الملاحظة</button></div></div>}
   </div>;
