@@ -21,6 +21,17 @@ describe("extractWithRemoteServer", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, `https://r.jina.ai/${fallbackArticle.url}`, expect.objectContaining({ headers: { Accept: "application/json", "X-Respond-With": "html" } }));
   });
 
+  it("falls back to Reader for a public domain rejected by SSRF false positive", async () => {
+    const youDoUrl = "https://youdo.blog/2024/11/23/10-topics-on-which-i-provide-consultations-book-your-session-with-younes-ben-amara-now/";
+    const fallbackArticle = { url: youDoUrl, title: "10 مواضيع أقدّم فيها الاستشارات", content: "<article><p>محتوى عربي قابل للقراءة.</p></article>", excerpt: "محتوى عربي قابل للقراءة.", readingTimeMinutes: 1 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ error: { json: { message: "لا يمكن جلب عنوان غير آمن." } } }]), { status: 400 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: fallbackArticle }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractWithRemoteServer(youDoUrl)).resolves.toMatchObject({ title: "10 مواضيع أقدّم فيها الاستشارات" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `https://r.jina.ai/${youDoUrl}`, expect.any(Object));
+  });
+
   it("does not send unsafe URLs to the external fallback", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ error: { json: { message: "لا يمكن جلب عنوان غير آمن." } } }]), { status: 400 }));
     vi.stubGlobal("fetch", fetchMock);

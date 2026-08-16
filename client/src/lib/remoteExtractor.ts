@@ -25,6 +25,26 @@ function shouldTryReaderFallback(message: string) {
   return /HTTP\s+(?:401|403|408|425|429|451|5\d{2})|تعذّر الوصول|تعذر الوصول|تعذّر استخراج|تعذر استخراج|network|fetch/i.test(message);
 }
 
+function isPrivateIpv4(host: string) {
+  const parts = host.split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false;
+  const [a, b] = parts.map(Number);
+  return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || (b === 0 && parts[2] === "0"))) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
+}
+
+function canUseReaderFallback(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
+    const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") || host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
+    if (isPrivateIpv4(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isAntiBotPage(title: string, content: string) {
   return /are you a robot|unusual activity|access denied|verify you are human|captcha|security check|enable javascript and cookies/i.test(`${title} ${content}`);
 }
@@ -65,7 +85,7 @@ export async function extractWithRemoteServer(url: string): Promise<RemoteExtrac
     directError = error instanceof Error ? error : new Error("تعذّر الاتصال بخادم الاستخراج.");
   }
   const message = directError.message;
-  if (isUnsafeUrlError(message) || !shouldTryReaderFallback(message)) throw directError;
+  if (!canUseReaderFallback(url) || (!isUnsafeUrlError(message) && !shouldTryReaderFallback(message))) throw directError;
   try {
     return await extractWithReader(url);
   } catch {
