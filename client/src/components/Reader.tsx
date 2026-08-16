@@ -123,7 +123,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className="rail-button" onClick={toggleHighlight} title="تمييز أو إلغاء تمييز النص المحدد"><Highlighter size={19} /></button>
       <button className="rail-button" onClick={openNote} title="إضافة ملاحظة إلى النص المحدد"><Quote size={19} /></button>
       <button className={speaking ? "rail-button active" : "rail-button"} onClick={toggleSpeech} title="استمع للنص"><Volume2 size={19} /></button>
-      <button className={!settings.showImages ? "rail-button active" : "rail-button"} onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title={settings.showImages ? "إخفاء الصور" : "إظهار الصور"} aria-pressed={!settings.showImages}><ImageOff size={19} /></button>
+      <button className={!settings.showImages ? "rail-button image-toggle active" : "rail-button image-toggle"} onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title={settings.showImages ? "إخفاء الصور" : "إظهار الصور"} aria-pressed={!settings.showImages}><ImageOff size={19} /></button>
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
