@@ -12,7 +12,7 @@ function renderLatexInText(text: string) {
   return text
     .replace(/\\\[([\s\S]+?)\\\]/g, (_match, expression: string) => render(expression, true))
     .replace(/\$\$([\s\S]+?)\$\$/g, (_match, expression: string) => render(expression, true))
-    .replace(/\\\(([^\n]+?)\\\)/g, (_match, expression: string) => render(expression, false))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_match, expression: string) => render(expression, /\\begin\{|\\end\{|\n/.test(expression)))
     .replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (_match, prefix: string, expression: string) => `${prefix}${render(expression, false)}`);
 }
 

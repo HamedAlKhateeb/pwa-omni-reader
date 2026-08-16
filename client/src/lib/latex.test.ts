@@ -19,4 +19,10 @@ describe("عرض LaTeX", () => {
   it("يعرض صيغة \\[ ... \\] كمعادلة منفصلة", () => {
     expect(renderLatexInHtml("\\[\\frac{a}{b}\\]")).toContain("katex-display");
   });
+
+  it("يعرض align* متعدد الأسطر داخل \\( ... \\)", () => {
+    const html = renderLatexInHtml("\\(\\begin{align*}\n\\cos(t)\\&amp;=\\frac{e^{it}+e^{-it}}{2} \\\\\n\\sin(t)\\&amp;=\\frac{e^{it}-e^{-it}}{2i}.\n\\end{align*}\\)");
+    expect(html).toContain("katex-display");
+    expect(html).not.toContain("\\\\begin{align*");
+  });
 });
