@@ -3,6 +3,7 @@
  * Controls are compact and direct; typography changes save to local storage.
  */
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRight, Bookmark, Check, ExternalLink, FileDown, FileText, Highlighter, ImageOff, Maximize, Minimize, Moon, Printer, Quote, Settings2, Sparkles, Volume2, X } from "lucide-react";
 import type { Article, Highlight, Note, ReaderSettings } from "@/lib/types";
 import { cleanHtml, highlightedHtml, isBrokenArticleContent, makeId } from "@/lib/article";
@@ -34,7 +35,11 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const readerHighlights = useMemo(() => highlights.filter((item) => item.articleId === article.id), [highlights, article.id]);
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
   const normalizedContent = useMemo(() => cleanHtml(article.content, article.url), [article.content, article.url]);
-  const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, readerHighlights, article.url)), [normalizedContent, article.url, readerHighlights]);
+  const displayHighlights = useMemo(() => {
+    if (!selection || readerHighlights.some((item) => item.quote === selection)) return readerHighlights;
+    return [...readerHighlights, { id: "selection-preview", articleId: article.id, quote: selection, createdAt: 0 }];
+  }, [article.id, readerHighlights, selection]);
+  const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, displayHighlights, article.url)), [normalizedContent, article.url, displayHighlights]);
   const speechText = useMemo(() => new DOMParser().parseFromString(article.content || "", "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "", [article.content]);
   const speechLanguage = /[\u0600-\u06ff]/.test(speechText) || settings.isRtl ? "ar-SA" : "en-US";
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
@@ -47,7 +52,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       if (maximum > 0) { node.scrollTop = maximum * Math.min(100, Math.max(0, article.progress)) / 100; lastScrollTop.current = node.scrollTop; }
     });
     return () => cancelAnimationFrame(frame);
-  }, [article.id, article.progress, normalizedContent]);
+  }, [article.id, normalizedContent]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (noteOpen) setNoteOpen(false); else onClose(); } };
@@ -88,7 +93,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
     const id = mark?.getAttribute("data-highlight-id");
-    if (!id) return;
+    if (!id || id === "selection-preview") return;
     event.preventDefault(); event.stopPropagation();
     onRemoveHighlight(id); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
   };
@@ -166,7 +171,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
         {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: html }} />}
-        {selection && <div className="selection-strip" style={selectionAnchor ? { top: `${selectionAnchor.top}px`, left: `${selectionAnchor.left}px` } : undefined}><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null); }}><X size={14} /></button></div>}
+        {selection && typeof document !== "undefined" ? createPortal(<div className="selection-strip" style={selectionAnchor ? { top: `${selectionAnchor.top}px`, left: `${selectionAnchor.left}px` } : undefined}><span>تم تحديد نص</span><button onClick={toggleHighlight}>{readerHighlights.some((item) => item.quote === selection) ? <X size={14} /> : <Highlighter size={14} />} {readerHighlights.some((item) => item.quote === selection) ? "إلغاء التمييز" : "تمييز"}</button><button onClick={openNote}><Quote size={14} /> ملاحظة</button><button onClick={() => { window.getSelection()?.removeAllRanges(); setSelection(""); setSelectionAnchor(null); }}><X size={14} /></button></div>, document.body) : null}
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
