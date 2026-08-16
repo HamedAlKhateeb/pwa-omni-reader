@@ -24,6 +24,9 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const speechRunRef = useRef(0);
+  const speechIndexRef = useRef(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsHidden, setControlsHidden] = useState(false);
   const lastScrollTop = useRef(0);
@@ -31,6 +34,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const readerNotes = useMemo(() => notes.filter((item) => item.articleId === article.id), [notes, article.id]);
   const normalizedContent = useMemo(() => cleanHtml(article.content, article.url), [article.content, article.url]);
   const html = useMemo(() => renderLatexInHtml(highlightedHtml(normalizedContent, readerHighlights, article.url)), [normalizedContent, article.url, readerHighlights]);
+  const speechText = useMemo(() => new DOMParser().parseFromString(article.content || "", "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "", [article.content]);
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
   useEffect(() => { if (normalizedContent && normalizedContent !== article.content && !isBrokenArticleContent(normalizedContent)) onUpdateArticle({ content: normalizedContent }); }, [article.content, normalizedContent, onUpdateArticle]);
   useEffect(() => {
@@ -48,7 +52,12 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey);
   }, [onClose, noteOpen]);
 
-  useEffect(() => () => speechSynthesis.cancel(), []);
+  useEffect(() => {
+    const loadVoices = () => setSpeechVoices(window.speechSynthesis?.getVoices() || []);
+    loadVoices();
+    window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
+    return () => { speechRunRef.current += 1; window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices); window.speechSynthesis?.cancel(); };
+  }, []);
 
   const saveProgress = () => {
     const node = shellRef.current;
@@ -97,10 +106,29 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     setNoteOpen(false); setSelection(""); setSelectionAnchor(null); window.getSelection()?.removeAllRanges();
   };
   const toggleSpeech = () => {
-    if (speaking) { speechSynthesis.cancel(); setSpeaking(false); return; }
-    const utterance = new SpeechSynthesisUtterance((new DOMParser().parseFromString(article.content, "text/html").body.textContent || ""));
-    utterance.lang = settings.isRtl ? "ar" : "en"; utterance.rate = 1; utterance.onend = () => setSpeaking(false); utterance.onerror = () => setSpeaking(false);
-    speechSynthesis.speak(utterance); setSpeaking(true);
+    const synthesis = window.speechSynthesis;
+    if (!synthesis || speaking || synthesis.speaking || synthesis.pending) { speechRunRef.current += 1; speechIndexRef.current = 0; synthesis?.cancel(); setSpeaking(false); return; }
+    if (!speechText) return;
+    const chunks = speechText.match(/[^.!?؟؛\n]+[.!?؟؛]?/g)?.flatMap((chunk) => chunk.trim().length > 220 ? (chunk.trim().match(/.{1,220}(?:\s|$)/g) || [chunk.trim()]) : [chunk.trim()]).filter(Boolean) || [speechText];
+    const run = speechRunRef.current + 1;
+    speechRunRef.current = run;
+    speechIndexRef.current = 0;
+    const voice = speechVoices.find((item) => /^ar(?:-|$)/i.test(item.lang)) || (settings.isRtl ? speechVoices.find((item) => item.lang.toLowerCase().startsWith("ar")) : undefined);
+    const speakNext = () => {
+      if (speechRunRef.current !== run) return;
+      const text = chunks[speechIndexRef.current++];
+      if (!text) { setSpeaking(false); return; }
+      const utterance = new SpeechSynthesisUtterance(text);
+      if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
+      else utterance.lang = settings.isRtl ? "ar-SA" : "en-US";
+      utterance.rate = settings.isRtl ? 0.94 : 1;
+      utterance.onend = speakNext;
+      utterance.onerror = (event) => { if (event.error !== "canceled" && event.error !== "interrupted") setSpeaking(false); };
+      synthesis.resume();
+      synthesis.speak(utterance);
+    };
+    setSpeaking(true);
+    speakNext();
   };
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) { await document.getElementById("reader-view")?.requestFullscreen?.(); setFullscreen(true); }
@@ -122,7 +150,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className={showSettings ? "rail-button active" : "rail-button"} onClick={() => setShowSettings((value) => !value)} title="إعدادات القراءة"><Settings2 size={19} /></button>
       <button className="rail-button" onClick={toggleHighlight} title="تمييز أو إلغاء تمييز النص المحدد"><Highlighter size={19} /></button>
       <button className="rail-button" onClick={openNote} title="إضافة ملاحظة إلى النص المحدد"><Quote size={19} /></button>
-      <button className={speaking ? "rail-button active" : "rail-button"} onClick={toggleSpeech} title="استمع للنص"><Volume2 size={19} /></button>
+      <button className={speaking ? "rail-button speech-toggle active" : "rail-button speech-toggle"} onClick={toggleSpeech} title={speaking ? "إيقاف الاستماع" : "استمع للنص"} aria-pressed={speaking}><Volume2 size={19} /></button>
       <button className={!settings.showImages ? "rail-button image-toggle active" : "rail-button image-toggle"} onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title={settings.showImages ? "إخفاء الصور" : "إظهار الصور"} aria-pressed={!settings.showImages}><ImageOff size={19} /></button>
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
