@@ -32,7 +32,9 @@ function isBlockedIp(address: string) {
   }
   if (family === 6) {
     const normalized = address.toLowerCase();
-    return normalized === "::" || normalized === "::1" || normalized.startsWith("fe80:") || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("::ffff:");
+    const mappedIpv4 = normalized.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (mappedIpv4) return isBlockedIp(mappedIpv4[1]);
+    return normalized === "::" || normalized === "::1" || normalized.startsWith("fe80:") || normalized.startsWith("fc") || normalized.startsWith("fd");
   }
   return true;
 }

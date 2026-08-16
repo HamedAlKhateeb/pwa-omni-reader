@@ -82,4 +82,13 @@ describe("extractArticleFromHtml", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+
+  it("accepts a public IPv4-mapped IPv6 address", async () => {
+    const story = "This is readable content from a public IPv4-mapped address. ".repeat(8);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`<html><body><article><h1>Mapped public host</h1><p>${story}</p></article></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractArticleFromUrl("http://[::ffff:93.184.216.34]/story")).resolves.toMatchObject({ title: "Mapped public host" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 });
