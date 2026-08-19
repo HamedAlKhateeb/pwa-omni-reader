@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Cloud, CloudOff, KeyRound, Loader2, LogIn, LogOut, RefreshCw, UserPlus } from "lucide-react";
 import {
   fullSync,
@@ -62,12 +62,6 @@ export default function SyncSettings({ onSyncFinished }: Props) {
     if (result.conflicts.length) { setMessage("تحتاج بعض الإعدادات إلى اختيار النسخة التي تريد الاحتفاظ بها."); return; }
     setMessage("اكتملت المزامنة مع حسابك. استُعيد محتوى المقالات المتزامنة من روابطها عند توفره."); onSyncFinished();
   };
-
-  useEffect(() => {
-    if (session && navigator.onLine) void runSync();
-    // The initial pull is intentional and must run once when Settings opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const authenticate = async (event: React.FormEvent) => {
     event.preventDefault();

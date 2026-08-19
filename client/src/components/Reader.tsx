@@ -60,6 +60,35 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   }, [onClose, noteOpen]);
 
   useEffect(() => {
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+    let timer: number | null = null;
+    const handleSelectionChange = () => {
+      const native = window.getSelection();
+      const content = shellRef.current?.querySelector(".reader-content");
+      const anchor = native?.anchorNode;
+      const current = native?.toString().trim() || "";
+      if (timer !== null) window.clearTimeout(timer);
+      if (!current) {
+        touchSelectionRef.current = "";
+        selectionStripRef.current?.classList.remove("visible");
+        selectionStripRef.current?.setAttribute("aria-hidden", "true");
+        return;
+      }
+      if (!content || !anchor || !content.contains(anchor)) return;
+      timer = window.setTimeout(() => {
+        const latest = window.getSelection()?.toString().trim() || "";
+        if (!latest) return;
+        touchSelectionRef.current = latest;
+        selectionStripRef.current?.classList.add("visible");
+        selectionStripRef.current?.setAttribute("aria-hidden", "false");
+        timer = null;
+      }, 120);
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => { document.removeEventListener("selectionchange", handleSelectionChange); if (timer !== null) window.clearTimeout(timer); };
+  }, [article.id]);
+
+  useEffect(() => {
     const loadVoices = () => setSpeechVoices(window.speechSynthesis?.getVoices() || []);
     loadVoices();
     window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
@@ -113,13 +142,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     setSelectionMode(null);
     window.getSelection()?.removeAllRanges();
   };
-  const captureTouchSelection = () => {
-    const current = readSelection();
-    if (!current) return;
-    touchSelectionRef.current = current;
-    selectionStripRef.current?.classList.add("visible");
-    selectionStripRef.current?.setAttribute("aria-hidden", "false");
-  };
+  const isTouchDevice = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
     const id = mark?.getAttribute("data-highlight-id");
@@ -128,6 +151,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     onRemoveHighlight(id); clearSelection();
   };
   const toggleHighlightMode = () => {
+    if (isTouchDevice() && (readSelection() || touchSelectionRef.current)) { commitHighlight(); return; }
     touchSelectionRef.current = "";
     selectionStripRef.current?.classList.remove("visible");
     selectionStripRef.current?.setAttribute("aria-hidden", "true");
@@ -136,6 +160,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     window.getSelection()?.removeAllRanges();
   };
   const toggleNoteMode = () => {
+    if (isTouchDevice() && (readSelection() || touchSelectionRef.current)) { openNoteForSelection(); return; }
     touchSelectionRef.current = "";
     selectionStripRef.current?.classList.remove("visible");
     selectionStripRef.current?.setAttribute("aria-hidden", "true");
@@ -211,7 +236,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
-    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureTouchSelection, 180)}>
+    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
         <div className="reader-source"><Bookmark size={14} /> <span>{new URL(article.url).hostname.replace(/^www\./, "")}</span> <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"} <a className="reader-source-link" href={article.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> فتح المصدر الأصلي</a></div>
         <h1>{article.title}</h1>
