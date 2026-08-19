@@ -46,7 +46,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     if (!strip || !native || !native.rangeCount) return;
     const rect = native.getRangeAt(0).getBoundingClientRect();
     if (!rect.width && !rect.height) return;
-    const gap = 8;
+    const gap = 20;
     const width = strip.offsetWidth || 220;
     const height = strip.offsetHeight || 44;
     const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left + (rect.width / 2) - (width / 2)));
