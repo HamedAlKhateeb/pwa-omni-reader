@@ -22,6 +22,8 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const shellRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selection, setSelection] = useState("");
+  const touchSelectionRef = useRef("");
+  const selectionStripRef = useRef<HTMLDivElement>(null);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(null);
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
@@ -72,21 +74,38 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     if (Math.abs(progress - article.progress) >= 3 || progress >= 100) onUpdateArticle({ progress, isRead: progress >= 80 || article.isRead });
   };
   const handleReaderScroll = () => {
+    if (touchSelectionRef.current) { touchSelectionRef.current = ""; selectionStripRef.current?.classList.remove("visible"); selectionStripRef.current?.setAttribute("aria-hidden", "true"); window.getSelection()?.removeAllRanges(); }
     const currentTop = shellRef.current?.scrollTop || 0;
     setControlsHidden((wasHidden) => nextReaderControlsHidden(lastScrollTop.current, currentTop, wasHidden));
     lastScrollTop.current = currentTop;
     saveProgress();
   };
   const readSelection = () => window.getSelection()?.toString().trim() || "";
+  const clearSelection = () => { setSelection(""); touchSelectionRef.current = ""; selectionStripRef.current?.classList.remove("visible"); selectionStripRef.current?.setAttribute("aria-hidden", "true"); setSelectionMode(null); window.getSelection()?.removeAllRanges(); };
+  const commitHighlight = () => {
+    const current = readSelection() || touchSelectionRef.current || selection;
+    if (!current) return;
+    if (!readerHighlights.some((item) => item.quote === current)) onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote: current, createdAt: Date.now() });
+    clearSelection();
+  };
+  const openNoteForSelection = () => {
+    const current = readSelection() || touchSelectionRef.current || selection;
+    if (!current) return;
+    setSelection(current);
+    setNoteText("");
+    setNoteOpen(true);
+    touchSelectionRef.current = "";
+    selectionStripRef.current?.classList.remove("visible");
+    selectionStripRef.current?.setAttribute("aria-hidden", "true");
+    setSelectionMode(null);
+  };
   const captureSelection = () => {
     const current = readSelection();
     if (!current || !selectionMode) return;
     setSelection(current);
     if (selectionMode === "highlight") {
       if (!readerHighlights.some((item) => item.quote === current)) onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote: current, createdAt: Date.now() });
-      setSelection("");
-      setSelectionMode(null);
-      window.getSelection()?.removeAllRanges();
+      clearSelection();
       return;
     }
     setNoteText("");
@@ -94,19 +113,32 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     setSelectionMode(null);
     window.getSelection()?.removeAllRanges();
   };
+  const captureTouchSelection = () => {
+    const current = readSelection();
+    if (!current) return;
+    touchSelectionRef.current = current;
+    selectionStripRef.current?.classList.add("visible");
+    selectionStripRef.current?.setAttribute("aria-hidden", "false");
+  };
   const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
     const id = mark?.getAttribute("data-highlight-id");
     if (!id) return;
     event.preventDefault(); event.stopPropagation();
-    onRemoveHighlight(id); setSelection(""); setSelectionMode(null); window.getSelection()?.removeAllRanges();
+    onRemoveHighlight(id); clearSelection();
   };
   const toggleHighlightMode = () => {
+    touchSelectionRef.current = "";
+    selectionStripRef.current?.classList.remove("visible");
+    selectionStripRef.current?.setAttribute("aria-hidden", "true");
     setSelection("");
     setSelectionMode((mode) => mode === "highlight" ? null : "highlight");
     window.getSelection()?.removeAllRanges();
   };
   const toggleNoteMode = () => {
+    touchSelectionRef.current = "";
+    selectionStripRef.current?.classList.remove("visible");
+    selectionStripRef.current?.setAttribute("aria-hidden", "true");
     setSelection("");
     setSelectionMode((mode) => mode === "note" ? null : "note");
     window.getSelection()?.removeAllRanges();
@@ -115,7 +147,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     const quote = selection || readSelection();
     if (!noteText.trim()) return;
     onAddNote({ id: makeId("note"), articleId: article.id, url: article.url, quote, content: noteText.trim(), isRtl: settings.isRtl, createdAt: Date.now(), updatedAt: Date.now() });
-    setNoteOpen(false); setSelection(""); setSelectionMode(null); window.getSelection()?.removeAllRanges();
+    setNoteOpen(false); clearSelection();
   };
   const showSpeechError = (message: string) => {
     if (speechErrorTimerRef.current) clearTimeout(speechErrorTimerRef.current);
@@ -179,13 +211,14 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
-    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureSelection, 120)}>
+    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureTouchSelection, 180)}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
         <div className="reader-source"><Bookmark size={14} /> <span>{new URL(article.url).hostname.replace(/^www\./, "")}</span> <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"} <a className="reader-source-link" href={article.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> فتح المصدر الأصلي</a></div>
         <h1>{article.title}</h1>
         <div className="reader-progress-row"><span>{article.progress}% مكتمل</span><div className="reader-progress"><i style={{ width: `${article.progress}%` }} /></div></div>
         {contentUnavailable ? <div className="reader-link-only"><FileText size={34} /><h2>لا يتوفر محتوى مقروء لهذا المقال</h2><p>أعاد الموقع قالبًا ديناميكيًا أو منع الاستخراج، لذلك لم يعرض «مسار» نصًا مكسورًا. افتح المصدر أو أعد المحاولة عند توفر الاتصال.</p><a href={article.url} target="_blank" rel="noreferrer">فتح المصدر</a></div> : <div className={settings.showImages ? "reader-content" : "reader-content hide-reader-images"} onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: html }} />}
 
+        <div ref={selectionStripRef} className="selection-strip selection-strip-touch" aria-hidden="true"><span>تم تحديد نص</span><button onClick={commitHighlight}><Highlighter size={14} /> تمييز</button><button onClick={openNoteForSelection}><Quote size={14} /> ملاحظة</button><button onClick={clearSelection} aria-label="إلغاء التحديد"><X size={14} /></button></div>
       </article>
     </main>
     <aside className="reader-insights"><div className="reader-orbit"><svg viewBox="0 0 36 36"><path className="orbit-back" d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/><path className="orbit-front" strokeDasharray={`${article.progress}, 100`} d="M18 2.3a15.7 15.7 0 1 1 0 31.4 15.7 15.7 0 1 1 0-31.4"/></svg><strong>{article.progress}%</strong><span>تقدّم</span></div><div className="insight-group"><div className="insight-label">التمييزات</div>{readerHighlights.length ? readerHighlights.map((item) => <button className="highlight-item" key={item.id} onClick={() => onRemoveHighlight(item.id)}>{item.quote}<X size={12} /></button>) : <p>حدد نصًا للاحتفاظ بفكرته.</p>}</div><div className="insight-group"><div className="insight-label">الملاحظات</div>{readerNotes.length ? readerNotes.map((item) => <div className="reader-note" key={item.id}><span>{item.quote}</span><p>{item.content}</p></div>) : <p>لا توجد ملاحظات بعد.</p>}</div></aside>
