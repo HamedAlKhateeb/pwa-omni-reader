@@ -9,8 +9,6 @@ import { cleanHtml, highlightedHtml, isBrokenArticleContent, makeId } from "@/li
 import { nextReaderControlsHidden } from "@/lib/readerControls";
 import { renderLatexInHtml } from "@/lib/latex";
 
-type SelectionMode = "highlight" | "note" | null;
-
 type Props = {
   article: Article; highlights: Highlight[]; notes: Note[]; settings: ReaderSettings;
   onClose: () => void; onSaveSettings: (settings: ReaderSettings) => void;
@@ -24,7 +22,6 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const [selection, setSelection] = useState("");
   const touchSelectionRef = useRef("");
   const selectionStripRef = useRef<HTMLDivElement>(null);
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>(null);
   const [noteText, setNoteText] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -43,6 +40,21 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   const speechText = useMemo(() => new DOMParser().parseFromString(article.content || "", "text/html").body.textContent?.replace(/\s+/g, " ").trim() || "", [article.content]);
   const speechLanguage = /[\u0600-\u06ff]/.test(speechText) || settings.isRtl ? "ar-SA" : "en-US";
   const contentUnavailable = !article.content || isBrokenArticleContent(article.content);
+  const positionSelectionToolbar = () => {
+    const strip = selectionStripRef.current;
+    const native = window.getSelection();
+    if (!strip || !native || !native.rangeCount) return;
+    const rect = native.getRangeAt(0).getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    const gap = 8;
+    const width = strip.offsetWidth || 220;
+    const height = strip.offsetHeight || 44;
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left + (rect.width / 2) - (width / 2)));
+    const above = rect.top - height - gap;
+    const top = above >= 12 ? above : Math.min(window.innerHeight - height - 12, rect.bottom + gap);
+    strip.style.left = `${Math.round(left)}px`;
+    strip.style.top = `${Math.round(Math.max(12, top))}px`;
+  };
   useEffect(() => { if (normalizedContent && normalizedContent !== article.content && !isBrokenArticleContent(normalizedContent)) onUpdateArticle({ content: normalizedContent }); }, [article.content, normalizedContent, onUpdateArticle]);
   useEffect(() => {
     const node = shellRef.current;
@@ -60,7 +72,6 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
   }, [onClose, noteOpen]);
 
   useEffect(() => {
-    if (!window.matchMedia("(pointer: coarse)").matches) return;
     let timer: number | null = null;
     const handleSelectionChange = () => {
       const native = window.getSelection();
@@ -79,13 +90,17 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
         const latest = window.getSelection()?.toString().trim() || "";
         if (!latest) return;
         touchSelectionRef.current = latest;
-        selectionStripRef.current?.classList.add("visible");
-        selectionStripRef.current?.setAttribute("aria-hidden", "false");
+        const strip = selectionStripRef.current;
+        strip?.classList.add("visible");
+        strip?.setAttribute("aria-hidden", "false");
+        window.requestAnimationFrame(positionSelectionToolbar);
         timer = null;
       }, 120);
     };
     document.addEventListener("selectionchange", handleSelectionChange);
-    return () => { document.removeEventListener("selectionchange", handleSelectionChange); if (timer !== null) window.clearTimeout(timer); };
+    window.addEventListener("resize", positionSelectionToolbar);
+    window.addEventListener("scroll", positionSelectionToolbar, true);
+    return () => { document.removeEventListener("selectionchange", handleSelectionChange); window.removeEventListener("resize", positionSelectionToolbar); window.removeEventListener("scroll", positionSelectionToolbar, true); if (timer !== null) window.clearTimeout(timer); };
   }, [article.id]);
 
   useEffect(() => {
@@ -110,7 +125,7 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     saveProgress();
   };
   const readSelection = () => window.getSelection()?.toString().trim() || "";
-  const clearSelection = () => { setSelection(""); touchSelectionRef.current = ""; selectionStripRef.current?.classList.remove("visible"); selectionStripRef.current?.setAttribute("aria-hidden", "true"); setSelectionMode(null); window.getSelection()?.removeAllRanges(); };
+  const clearSelection = () => { setSelection(""); touchSelectionRef.current = ""; selectionStripRef.current?.classList.remove("visible"); selectionStripRef.current?.setAttribute("aria-hidden", "true"); window.getSelection()?.removeAllRanges(); };
   const commitHighlight = () => {
     const current = readSelection() || touchSelectionRef.current || selection;
     if (!current) return;
@@ -126,47 +141,13 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     touchSelectionRef.current = "";
     selectionStripRef.current?.classList.remove("visible");
     selectionStripRef.current?.setAttribute("aria-hidden", "true");
-    setSelectionMode(null);
   };
-  const captureSelection = () => {
-    const current = readSelection();
-    if (!current || !selectionMode) return;
-    setSelection(current);
-    if (selectionMode === "highlight") {
-      if (!readerHighlights.some((item) => item.quote === current)) onAddHighlight({ id: makeId("highlight"), articleId: article.id, quote: current, createdAt: Date.now() });
-      clearSelection();
-      return;
-    }
-    setNoteText("");
-    setNoteOpen(true);
-    setSelectionMode(null);
-    window.getSelection()?.removeAllRanges();
-  };
-  const isTouchDevice = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const handleContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     const mark = (event.target as HTMLElement).closest("mark.reader-highlight");
     const id = mark?.getAttribute("data-highlight-id");
     if (!id) return;
     event.preventDefault(); event.stopPropagation();
     onRemoveHighlight(id); clearSelection();
-  };
-  const toggleHighlightMode = () => {
-    if (isTouchDevice() && (readSelection() || touchSelectionRef.current)) { commitHighlight(); return; }
-    touchSelectionRef.current = "";
-    selectionStripRef.current?.classList.remove("visible");
-    selectionStripRef.current?.setAttribute("aria-hidden", "true");
-    setSelection("");
-    setSelectionMode((mode) => mode === "highlight" ? null : "highlight");
-    window.getSelection()?.removeAllRanges();
-  };
-  const toggleNoteMode = () => {
-    if (isTouchDevice() && (readSelection() || touchSelectionRef.current)) { openNoteForSelection(); return; }
-    touchSelectionRef.current = "";
-    selectionStripRef.current?.classList.remove("visible");
-    selectionStripRef.current?.setAttribute("aria-hidden", "true");
-    setSelection("");
-    setSelectionMode((mode) => mode === "note" ? null : "note");
-    window.getSelection()?.removeAllRanges();
   };
   const saveNote = () => {
     const quote = selection || readSelection();
@@ -229,14 +210,12 @@ export default function Reader({ article, highlights, notes, settings, onClose, 
     <aside className={`reader-rail ${controlsHidden ? "reader-controls-hidden" : ""}`} aria-label="أدوات القارئ">
       <button className="rail-button" onClick={onClose} title="العودة للمكتبة"><ArrowRight size={19} /></button><span className="rail-line" />
       <button className={showSettings ? "rail-button active" : "rail-button"} onClick={() => setShowSettings((value) => !value)} title="إعدادات القراءة"><Settings2 size={19} /></button>
-      <button className={selectionMode === "highlight" ? "rail-button active" : "rail-button"} onClick={toggleHighlightMode} title={selectionMode === "highlight" ? "إلغاء وضع التمييز" : "ابدأ تحديد نص للتمييز"} aria-pressed={selectionMode === "highlight"}><Highlighter size={19} /></button>
-      <button className={selectionMode === "note" ? "rail-button active" : "rail-button"} onClick={toggleNoteMode} title={selectionMode === "note" ? "إلغاء وضع الملاحظة" : "ابدأ تحديد نص للتعليق"} aria-pressed={selectionMode === "note"}><Quote size={19} /></button>
       <button className={speaking ? "rail-button speech-toggle active" : "rail-button speech-toggle"} onClick={toggleSpeech} title={speaking ? "إيقاف الاستماع" : "استمع للنص"} aria-pressed={speaking}><Volume2 size={19} /></button>
       <button className={!settings.showImages ? "rail-button image-toggle active" : "rail-button image-toggle"} onClick={() => onSaveSettings({ ...settings, showImages: !settings.showImages })} title={settings.showImages ? "إخفاء الصور" : "إظهار الصور"} aria-pressed={!settings.showImages}><ImageOff size={19} /></button>
       <button className={fullscreen ? "rail-button active" : "rail-button"} onClick={toggleFullscreen} title="ملء الشاشة">{fullscreen ? <Minimize size={19} /> : <Maximize size={19} />}</button>
       <button className="rail-button" onClick={() => window.print()} title="طباعة"><Printer size={19} /></button><button className="rail-button" onClick={exportHtml} title="حفظ كـ HTML"><FileDown size={19} /></button>
     </aside>
-    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll} onMouseUp={captureSelection}>
+    <main className="reader-scroll" ref={shellRef} onScroll={handleReaderScroll}>
       <article className={`reader-paper ${settings.fontFamily}`} style={{ fontSize: `${settings.fontSize}px`, lineHeight: settings.lineHeight, wordSpacing: `${settings.wordSpacing}px`, textAlign: settings.textAlign, maxWidth: `${settings.width}px` }}>
         <div className="reader-source"><Bookmark size={14} /> <span>{new URL(article.url).hostname.replace(/^www\./, "")}</span> <span>·</span> {article.readingTimeMinutes ? `${article.readingTimeMinutes} د قراءة` : "رابط محفوظ"} <a className="reader-source-link" href={article.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> فتح المصدر الأصلي</a></div>
         <h1>{article.title}</h1>
